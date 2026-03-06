@@ -78,15 +78,15 @@ export function HeroSection({ session, mapReadings, dict }: HeroSectionProps) {
             transition={{ duration: 0.5, delay: 0.15 }}
             className="mt-7 grid w-full max-w-xl gap-3 sm:grid-cols-3"
           >
-            <div className="rounded-xl border border-cyan-400/30 bg-slate-950/70 px-4 py-3">
+            <div className="rounded-xl border border-slate-700 bg-slate-950 px-4 py-3">
               <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Sampling</p>
               <p className="mt-1 text-sm font-semibold text-zinc-100">Every 60s</p>
             </div>
-            <div className="rounded-xl border border-cyan-400/30 bg-slate-950/70 px-4 py-3">
+            <div className="rounded-xl border border-slate-700 bg-slate-950 px-4 py-3">
               <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Coverage</p>
               <p className="mt-1 text-sm font-semibold text-zinc-100">Bus, Metro, Trolley</p>
             </div>
-            <div className="rounded-xl border border-cyan-400/30 bg-slate-950/70 px-4 py-3">
+            <div className="rounded-xl border border-slate-700 bg-slate-950 px-4 py-3">
               <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Access</p>
               <p className="mt-1 text-sm font-semibold text-zinc-100">
                 {session ? "Dashboard Ready" : "Public Preview"}
@@ -99,7 +99,7 @@ export function HeroSection({ session, mapReadings, dict }: HeroSectionProps) {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.12 }}
-          className="rounded-3xl border border-cyan-400/20 bg-slate-950/70 p-2 shadow-[0_16px_54px_rgba(8,47,73,0.45)] backdrop-blur-xl"
+          className="rounded-3xl border border-slate-700 bg-slate-950 p-2 shadow-2xl"
         >
           <div className="overflow-hidden rounded-2xl border border-slate-800/80">
             <AirQualityMap

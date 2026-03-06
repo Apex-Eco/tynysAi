@@ -326,13 +326,13 @@ export function SidebarLayout({ locale, children }: SidebarLayoutProps) {
         )}
         style={sidebarStyles}
       >
-        <header className="sticky top-0 z-30 flex items-center justify-end gap-3 border-b border-border bg-background/90 px-4 py-2 backdrop-blur transition-colors">
+        <header className="sticky top-0 z-30 flex items-center justify-end gap-3 border-b border-slate-700 bg-slate-950 px-4 py-2 transition-colors">
           <LanguageSwitcher iconOnly />
           {status === "authenticated" && session?.user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="flex items-center gap-2 px-2">
-                  <Avatar className="h-8 w-8 border border-white/10">
+                  <Avatar className="h-8 w-8 border border-slate-700">
                     <AvatarImage
                       src={
                         session.user.image ||

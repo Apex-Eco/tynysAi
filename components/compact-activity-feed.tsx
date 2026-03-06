@@ -13,18 +13,13 @@ type CompactActivityFeedProps = {
   className?: string;
 };
 
-const formatRelativeTime = (timestamp: string | Date | null) => {
+const formatActivityTimestamp = (timestamp: string | Date | null) => {
   if (!timestamp) return "just now";
 
   const date = typeof timestamp === "string" ? new Date(timestamp) : timestamp;
-  const now = Date.now();
-  const diffInSeconds = Math.max(0, Math.floor((now - date.getTime()) / 1000));
+  if (Number.isNaN(date.getTime())) return "just now";
 
-  if (Number.isNaN(diffInSeconds)) return "just now";
-  if (diffInSeconds < 60) return `${diffInSeconds}s ago`;
-  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
-  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
-  return `${Math.floor(diffInSeconds / 86400)}d ago`;
+  return `${date.toISOString().slice(0, 16).replace("T", " ")} UTC`;
 };
 
 export function CompactActivityFeed({
@@ -36,7 +31,7 @@ export function CompactActivityFeed({
   return (
     <div
       className={cn(
-        "rounded-xl border bg-card/70 shadow-sm backdrop-blur-sm",
+        "rounded-xl border border-slate-700 bg-slate-950 shadow-sm",
         "max-h-72 overflow-hidden",
         className
       )}
@@ -79,7 +74,7 @@ export function CompactActivityFeed({
                   </span>
                 </div>
                 <span className="whitespace-nowrap text-xs text-muted-foreground">
-                  {formatRelativeTime(item.timestamp)}
+                  {formatActivityTimestamp(item.timestamp)}
                 </span>
               </div>
             ))}

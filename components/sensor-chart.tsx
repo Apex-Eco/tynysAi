@@ -49,11 +49,24 @@ const barTimestampFormatter = new Intl.DateTimeFormat("en-US", {
   day: "2-digit",
   hour: "2-digit",
   minute: "2-digit",
+  timeZone: "UTC",
 });
 
 const barTickFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "2-digit",
+  timeZone: "UTC",
+});
+
+const latestTimestampFormatter = new Intl.DateTimeFormat("en-US", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+  timeZone: "UTC",
 });
 
 function formatTimestampLabel(timestamp: string) {
@@ -64,6 +77,11 @@ function formatTimestampLabel(timestamp: string) {
 function formatTickLabel(timestamp: string) {
   const date = new Date(timestamp);
   return Number.isNaN(date.getTime()) ? timestamp : barTickFormatter.format(date);
+}
+
+function formatLatestTimestamp(timestamp: string) {
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? timestamp : `${latestTimestampFormatter.format(date)} UTC`;
 }
 
 function SensorBarTooltip({ active, payload }: SensorBarTooltipProps) {
@@ -174,7 +192,7 @@ export function SensorChart({ data, actionSlot }: SensorChartProps) {
               </span>
               <span className="text-muted-foreground">•</span>
               <span className="text-muted-foreground text-xs">
-                {new Date(latestReading.timestamp).toLocaleString()}
+                {formatLatestTimestamp(latestReading.timestamp)}
               </span>
             </div>
           </div>

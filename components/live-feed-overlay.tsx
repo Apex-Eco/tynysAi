@@ -38,7 +38,7 @@ export function LiveFeedOverlay({
       <PopoverTrigger asChild>
         <Button
           variant="secondary"
-          className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-full px-4 pr-5 shadow-lg backdrop-blur"
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-full border border-slate-700 bg-slate-900 px-4 pr-5 text-slate-100 shadow-lg hover:bg-slate-800"
         >
           <span className="relative flex h-3 w-3">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/80" />

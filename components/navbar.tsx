@@ -95,7 +95,7 @@ export function Navbar() {
   
   const hasSolidBackground = true;
 
-  const navBase = "fixed top-0 z-50 w-full border-b border-cyan-400/20 bg-slate-950 shadow-[0_8px_28px_rgba(2,6,23,0.45)] backdrop-blur-md";
+  const navBase = "fixed top-0 z-50 w-full border-b border-slate-700 bg-slate-950 shadow-lg";
   const showProfileActions = status === 'authenticated' && session?.user && isDashboardRoute;
   
   const textColorClass = hasSolidBackground 
@@ -130,7 +130,7 @@ export function Navbar() {
                 TynysAi
               </span>
               {hasSolidBackground && !isDashboardRoute ? (
-                <span className="live-aqi-pill hidden rounded-full border border-cyan-300/30 bg-cyan-500/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-200 lg:inline-flex">
+                <span className="live-aqi-pill hidden rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-200 lg:inline-flex">
                   <span className="live-aqi-dot mr-1.5 inline-block h-1.5 w-1.5 rounded-full" aria-hidden />
                   {t.liveAqi}
                 </span>
@@ -207,14 +207,14 @@ export function Navbar() {
                   <span className="sr-only">{t.menu}</span>
                 </Button>
               </SheetTrigger>
-              <SheetContent side="right" className="z-50 w-[300px] sm:w-[400px]">
+              <SheetContent side="right" className="z-50 w-[300px] border-slate-700 bg-slate-950 text-slate-100 sm:w-[400px]">
                 <SheetHeader>
                   <SheetTitle className="text-left">{t.menu}</SheetTitle>
                 </SheetHeader>
                 <div className="flex flex-col gap-6 mt-6">
                   {/* User Profile Section - Show when authenticated */}
                   {showProfileActions && (
-                    <div className="flex items-center gap-3 pb-4 border-b border-border">
+                    <div className="flex items-center gap-3 border-b border-slate-700 pb-4">
                       <Avatar className="h-12 w-12 border-2 border-primary">
                         <AvatarImage 
                           src={session.user.image || `https://api.dicebear.com/7.x/initials/svg?seed=${session.user.name || session.user.email}`} 
@@ -237,14 +237,14 @@ export function Navbar() {
 
                   {/* Login/Signup Buttons - Show when not authenticated */}
                   {status === 'unauthenticated' && (
-                    <div className="flex flex-col gap-4 pb-4 border-b border-border">
+                    <div className="flex flex-col gap-4 border-b border-slate-700 pb-4">
                       <Link href={`/${locale}/sign-in`} onClick={() => setIsOpen(false)}>
-                        <Button variant="outline" className="h-12 w-full border-cyan-300/35 bg-slate-900 text-base text-slate-100 hover:bg-slate-800">
+                        <Button variant="outline" className="h-12 w-full border-slate-700 bg-slate-900 text-base text-slate-100 hover:bg-slate-800">
                           {t.login}
                         </Button>
                       </Link>
                       <Link href={`/${locale}/sign-up`} onClick={() => setIsOpen(false)}>
-                        <Button className="h-12 w-full bg-gradient-to-r from-cyan-500 to-blue-600 text-base hover:from-cyan-400 hover:to-blue-500">
+                        <Button className="h-12 w-full bg-blue-600 text-base text-white hover:bg-blue-500">
                           {t.signUp}
                         </Button>
                       </Link>

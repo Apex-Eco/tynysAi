@@ -36,7 +36,7 @@ export function AuthPageShell({ children }: AuthPageShellProps) {
           preload="auto"
           aria-hidden
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-background/50 via-background/70 to-background/85 dark:from-background/60 dark:via-background/75 dark:to-background/90 backdrop-blur-sm" />
+        <div className="absolute inset-0 bg-slate-950 sm:bg-gradient-to-b sm:from-background/50 sm:via-background/70 sm:to-background/85" />
       </div>
 
       <div className="relative flex min-h-screen items-center justify-center px-4 py-12 sm:px-6 lg:px-8">

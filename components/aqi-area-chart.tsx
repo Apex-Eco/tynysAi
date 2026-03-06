@@ -30,9 +30,20 @@ interface AqiAreaChartProps {
   className?: string;
 }
 
+const chartTimestampFormatter = new Intl.DateTimeFormat("en-US", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+  timeZone: "UTC",
+});
+
 const formatTimestamp = (value: string) => {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? value : `${chartTimestampFormatter.format(date)} UTC`;
 };
 
 type AqiTooltipPayload = {
