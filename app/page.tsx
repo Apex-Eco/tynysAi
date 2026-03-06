@@ -14,7 +14,7 @@ export default function RootPage() {
   // Redirect authenticated users to dashboard
   useEffect(() => {
     if (status === 'authenticated' && session) {
-      router.push(`/${i18n.defaultLocale}/dashboard`);
+      router.replace(`/${i18n.defaultLocale}/dashboard`);
     }
   }, [status, session, router]);
 
@@ -30,9 +30,24 @@ export default function RootPage() {
     );
   }
 
-  // Don't render landing page if authenticated (prevents flash before redirect)
+  // Provide a clear fallback CTA while client-side redirect resolves
   if (status === 'authenticated') {
-    return null;
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center px-6">
+        <div className="w-full max-w-md rounded-xl border bg-card p-6 text-center shadow-sm">
+          <h1 className="text-2xl font-semibold text-foreground">You are signed in</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Continue to your dashboard.
+          </p>
+          <Button
+            className="mt-5 w-full"
+            onClick={() => router.replace(`/${i18n.defaultLocale}/dashboard`)}
+          >
+            Go to Dashboard
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   return (

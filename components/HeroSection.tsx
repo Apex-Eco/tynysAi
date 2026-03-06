@@ -1,30 +1,29 @@
 "use client";
 
-import {
-  motion,
-  useScroll,
-  useTransform,
-  useMotionValueEvent,
-} from "framer-motion";
-import { ArrowRight, LayoutDashboard, ChevronDown } from "lucide-react";
-import Link from "next/link";
-import { useRef } from "react";
-import { Button } from "@/components/ui/button";
+import { motion } from "framer-motion";
+import dynamic from "next/dynamic";
 import type { Session } from "next-auth";
-import type { Locale } from "@/lib/i18n/config";
+import type { MapReading } from "@/components/air-quality-map";
 
-// Seeded PRNG to ensure deterministic random values for SSR/client hydration
-function seededRandom(seed: number) {
-  let s = seed;
-  return () => {
-    s = (s * 16807 + 0) % 2147483647;
-    return (s - 1) / 2147483646;
-  };
-}
+type AirQualityMapProps = {
+  readings: MapReading[];
+  emptyStateText: string;
+  heightClass?: string;
+  className?: string;
+  showLegend?: boolean;
+};
+
+const AirQualityMap = dynamic<AirQualityMapProps>(
+  () => import("@/components/air-quality-map").then((mod) => mod.AirQualityMap),
+  {
+    ssr: false,
+    loading: () => <div className="h-[320px] animate-pulse bg-slate-900/70 sm:h-[380px] lg:h-[460px]" />,
+  },
+);
 
 type HeroSectionProps = {
-  lang: Locale;
   session: Session | null;
+  mapReadings: MapReading[];
   dict: {
     hero: {
       badge: string;
@@ -35,370 +34,83 @@ type HeroSectionProps = {
       goToDashboard: string;
       learnMore: string;
     };
-    heroPillars: {
-      fewShot: string;
-      optimization: string;
-      structuredOutput: string;
-      security: string;
-    };
   };
 };
 
-export function HeroSection({ lang, session, dict }: HeroSectionProps) {
-  const heroRef = useRef<HTMLElement | null>(null);
-  const { scrollYProgress } = useScroll({
-    target: heroRef,
-    offset: ["start start", "end start"],
-  });
-
-  // Background opacity: 1 (top) → 0 (bottom of hero)
-  const backgroundOpacity = useTransform(scrollYProgress, [0, 1], [1, 0]);
-  // Background scale: 1 (top) → 1.1 (bottom) for zooming depth effect
-  const backgroundScale = useTransform(scrollYProgress, [0, 1], [1, 1.1]);
-
-  // Update body class when background is scrolled past
-  useMotionValueEvent(scrollYProgress, "change", (latest) => {
-    if (typeof window !== "undefined" && typeof document !== "undefined") {
-      // When scroll progress reaches 0.85 or more, background is effectively scrolled past
-      const shouldBeSolid = latest >= 0.85;
-      const currentlySolid = document.body.hasAttribute("data-video-scrolled");
-
-      if (shouldBeSolid && !currentlySolid) {
-        // Background is scrolled past, add attribute to body
-        document.body.setAttribute("data-video-scrolled", "true");
-        // Dispatch custom event for navbar to listen to
-        window.dispatchEvent(
-          new CustomEvent("videoScrolled", { detail: true }),
-        );
-      } else if (!shouldBeSolid && currentlySolid) {
-        // Background is still visible, remove attribute
-        document.body.removeAttribute("data-video-scrolled");
-        window.dispatchEvent(
-          new CustomEvent("videoScrolled", { detail: false }),
-        );
-      }
-    }
-  });
-
-  // Generate random particles for air quality visualization (deterministic seed)
-  const rng1 = seededRandom(42);
-  const particles = Array.from({ length: 50 }, (_, i) => ({
-    id: i,
-    x: rng1() * 100,
-    y: rng1() * 100,
-    size: rng1() * 3 + 1,
-    duration: rng1() * 20 + 15,
-    delay: rng1() * 5,
-  }));
-
-  // Generate air molecules (O2, CO2, etc.) (deterministic seed)
-  const rng2 = seededRandom(123);
-  const molecules = Array.from({ length: 30 }, (_, i) => ({
-    id: i,
-    x: rng2() * 100,
-    y: rng2() * 100,
-    size: rng2() * 8 + 4,
-    duration: rng2() * 25 + 20,
-    delay: rng2() * 5,
-  }));
-
+export function HeroSection({ session, mapReadings, dict }: HeroSectionProps) {
   return (
-    <section ref={heroRef} className="relative min-h-[120vh]">
-      <div className="sticky top-0 flex h-screen items-center justify-center">
-        <motion.div
-          initial={false}
-          style={{
-            opacity: backgroundOpacity,
-            scale: backgroundScale,
-          }}
-          className="fixed inset-0 z-0 h-screen w-full overflow-hidden bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900"
-        >
-          {/* SVG Background with Air Quality Animations */}
-          <svg
-            className="absolute inset-0 h-full w-full"
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 100 100"
-            preserveAspectRatio="xMidYMid slice"
-            aria-hidden="true"
-          >
-            {/* Wind Current Lines */}
-            <defs>
-              <linearGradient
-                id="windGradient"
-                x1="0%"
-                y1="0%"
-                x2="100%"
-                y2="0%"
-              >
-                <stop
-                  offset="0%"
-                  stopColor="rgba(59, 130, 246, 0.1)"
-                  stopOpacity="0"
-                />
-                <stop
-                  offset="50%"
-                  stopColor="rgba(59, 130, 246, 0.3)"
-                  stopOpacity="1"
-                />
-                <stop
-                  offset="100%"
-                  stopColor="rgba(59, 130, 246, 0.1)"
-                  stopOpacity="0"
-                />
-              </linearGradient>
-              <linearGradient
-                id="particleGradient"
-                x1="0%"
-                y1="0%"
-                x2="0%"
-                y2="100%"
-              >
-                <stop offset="0%" stopColor="rgba(255, 255, 255, 0.4)" />
-                <stop offset="100%" stopColor="rgba(255, 255, 255, 0.1)" />
-              </linearGradient>
-            </defs>
-
-            {/* Animated Wind Currents */}
-            {Array.from({ length: 8 }).map((_, i) => {
-              const baseY = 50 + Math.sin(i) * 15;
-              const baseX = i * 12.5;
-              if (!Number.isFinite(baseX) || !Number.isFinite(baseY)) return null;
-              const initialPath = `M ${baseX} ${baseY} Q ${baseX + 10} ${baseY + Math.sin(i) * 10} ${baseX + 20} ${baseY}`;
-              if (!initialPath) return null;
-              const animatedPath = `M ${baseX} ${baseY + Math.sin(i + 0.5) * 5} Q ${baseX + 10} ${baseY + Math.sin(i + 0.5) * 15} ${baseX + 20} ${baseY + Math.sin(i + 0.5) * 5}`;
-              return (
-                <motion.path
-                  key={`wind-${i}`}
-                  d={initialPath}
-                  stroke="url(#windGradient)"
-                  strokeWidth="0.3"
-                  fill="none"
-                  initial={{ pathLength: 0, opacity: 0 }}
-                  animate={{
-                    pathLength: 1,
-                    opacity: [0.2, 0.5, 0.2],
-                    d: [initialPath, animatedPath, initialPath],
-                  }}
-                  transition={{
-                    duration: 8 + i * 0.5,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                    delay: i * 0.3,
-                  }}
-                />
-              );
-            })}
-
-            {/* Floating Air Particles */}
-            {particles.map((particle) => {
-              const driftX =
-                (((particle.x * 7 + particle.id * 13) % 100) / 100 - 0.5) * 15;
-              const driftX2 =
-                (((particle.y * 11 + particle.id * 17) % 100) / 100 - 0.5) * 20;
-              return (
-                <motion.circle
-                  key={`particle-${particle.id}`}
-                  r={particle.size * 0.3}
-                  fill="url(#particleGradient)"
-                  initial={{ opacity: 0, cx: particle.x, cy: particle.y }}
-                  animate={{
-                    opacity: [0, 0.6, 0],
-                    cx: [particle.x, particle.x + driftX, particle.x + driftX2],
-                    cy: [particle.y, particle.y - 5, particle.y - 10],
-                  }}
-                  transition={{
-                    duration: particle.duration,
-                    repeat: Infinity,
-                    ease: "linear",
-                    delay: particle.delay,
-                  }}
-                />
-              );
-            })}
-
-            {/* Air Molecules (O2, CO2 representation) */}
-            {molecules.map((molecule) => {
-              const driftX =
-                (((molecule.x * 7 + molecule.id * 13) % 100) / 100 - 0.5) * 8;
-              const driftY =
-                (((molecule.y * 11 + molecule.id * 17) % 100) / 100 - 0.5) * 8;
-              return (
-                <motion.g
-                  key={`molecule-${molecule.id}`}
-                  initial={{ opacity: 0 }}
-                  animate={{
-                    opacity: [0.3, 0.7, 0.3],
-                    x: [molecule.x, molecule.x + driftX, molecule.x],
-                    y: [molecule.y, molecule.y + driftY, molecule.y],
-                  }}
-                  transition={{
-                    duration: molecule.duration,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                    delay: molecule.delay,
-                  }}
-                >
-                  {/* Outer circle (molecule boundary) */}
-                  <circle
-                    cx="0"
-                    cy="0"
-                    r={molecule.size * 0.5}
-                    fill="none"
-                    stroke="rgba(147, 197, 253, 0.3)"
-                    strokeWidth="0.2"
-                  />
-                  {/* Inner circle (molecule core) */}
-                  <circle
-                    cx="0"
-                    cy="0"
-                    r={molecule.size * 0.2}
-                    fill="rgba(147, 197, 253, 0.4)"
-                  />
-                  {/* Small dots representing atoms */}
-                  <circle
-                    cx={molecule.size * 0.3}
-                    cy="0"
-                    r={molecule.size * 0.1}
-                    fill="rgba(96, 165, 250, 0.5)"
-                  />
-                  <circle
-                    cx={-molecule.size * 0.3}
-                    cy="0"
-                    r={molecule.size * 0.1}
-                    fill="rgba(96, 165, 250, 0.5)"
-                  />
-                </motion.g>
-              );
-            })}
-
-            {/* Air Quality Indicator Waves */}
-            {Array.from({ length: 5 }).map((_, i) => (
-              <motion.circle
-                key={`wave-${i}`}
-                cx="50"
-                cy="50"
-                r={20 + i * 10}
-                fill="none"
-                stroke="rgba(59, 130, 246, 0.1)"
-                strokeWidth="0.3"
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{
-                  opacity: [0, 0.3, 0],
-                  scale: [0.8, 1.2, 1.5],
-                }}
-                transition={{
-                  duration: 4 + i * 0.5,
-                  repeat: Infinity,
-                  ease: "easeOut",
-                  delay: i * 0.8,
-                }}
-              />
-            ))}
-          </svg>
-
-          {/* Gradient Overlay */}
-          <div
-            className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/45 to-black/65"
-            aria-hidden="true"
-          ></div>
-        </motion.div>
-
-        {/* Hero Container - Centered Layout */}
-        <div className="relative z-10 flex h-full w-full items-center justify-center px-6 lg:px-12 py-20">
-          <div className="max-w-5xl mx-auto w-full">
-            {/* Hero Content - Center Aligned - Minimal Text */}
-            <div className="text-center space-y-6 text-white drop-shadow-[0_16px_48px_rgba(0,0,0,0.55)]">
-              {/* Main Headline - Center Aligned */}
-              <motion.h1
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.1 }}
-                className="text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold leading-[1.1] tracking-[-0.02em] mb-4"
-              >
-                {dict.hero.title ? (
-                  (() => {
-                    const words = dict.hero.title.split(" ");
-                    const firstWord = words[0];
-                    const rest = words.slice(1).join(" ");
-                    return (
-                      <>
-                        <span className="bg-gradient-to-r from-teal-400 via-blue-400 to-teal-300 bg-clip-text text-transparent">
-                          {firstWord}
-                        </span>
-                        {rest && <span> {rest}</span>}
-                      </>
-                    );
-                  })()
-                ) : (
-                  <span className="bg-gradient-to-r from-teal-400 via-blue-400 to-teal-300 bg-clip-text text-transparent">
-                    TynysAi
-                  </span>
-                )}
-              </motion.h1>
-
-              {/* Subheading - Short and Concise */}
-              <motion.p
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.2 }}
-                className="text-xl md:text-2xl text-white/90 leading-[1.5] max-w-2xl mx-auto mb-8"
-              >
-                {dict.hero.description}
-              </motion.p>
-
-              {/* CTA Group - Center Aligned */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.3 }}
-                className="flex flex-col sm:flex-row items-center justify-center gap-4"
-              >
-                <Button
-                  asChild
-                  size="lg"
-                  className="h-14 px-8 text-lg font-semibold bg-white text-slate-900 hover:bg-slate-100 hover:text-slate-900 shadow-xl hover:shadow-2xl transition-all duration-300 rounded-lg"
-                >
-                  <Link
-                    href={session ? `/${lang}/dashboard` : `/${lang}/sign-up`}
-                    className="flex items-center"
-                  >
-                    {session ? (
-                      <LayoutDashboard className="mr-2 h-5 w-5" />
-                    ) : (
-                      <ArrowRight className="mr-2 h-5 w-5" />
-                    )}
-                    {session ? dict.hero.goToDashboard : dict.hero.getStarted}
-                  </Link>
-                </Button>
-                <a
-                  className="inline-flex items-center justify-center h-14 px-8 text-lg font-semibold rounded-lg shadow-lg bg-white text-slate-900 hover:bg-slate-100 transition-colors"
-                  href="#architecture"
-                >
-                  {dict.hero.learnMore}
-                </a>
-              </motion.div>
-            </div>
-          </div>
-
-          {/* Scroll Indicator */}
+    <section className="relative z-20 px-4 pb-8 pt-20 sm:px-6 sm:pb-10 sm:pt-24 lg:px-8 lg:pb-12 lg:pt-28" id="hero">
+      <div className="mx-auto grid min-h-[calc(100svh-5rem)] w-full max-w-7xl content-center gap-8 sm:min-h-[calc(100dvh-5.5rem)] lg:min-h-[calc(100dvh-6rem)] lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:items-center lg:gap-10">
+        <div className="text-left lg:pr-4">
           <motion.div
-            initial={{ opacity: 0, y: -10 }}
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 1 }}
-            className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-20"
+            transition={{ duration: 0.45 }}
+            className="inline-flex items-center gap-2 rounded-full border border-cyan-300/25 bg-cyan-500/10 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-200"
           >
-            <motion.div
-              animate={{ y: [0, 8, 0] }}
-              transition={{
-                duration: 1.5,
-                repeat: Infinity,
-                ease: "easeInOut",
-              }}
-            >
-              <ChevronDown className="h-8 w-8 text-white/70" />
-            </motion.div>
+            <span className="h-1.5 w-1.5 rounded-full bg-cyan-300" />
+            {dict.hero.badge}
+          </motion.div>
+
+          <motion.h1
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.05 }}
+            className="mt-5 max-w-2xl text-3xl font-bold leading-tight tracking-[-0.02em] text-white sm:text-5xl lg:text-6xl"
+          >
+            <span className="bg-gradient-to-r from-cyan-200 via-sky-300 to-blue-300 bg-clip-text text-transparent">
+              {dict.hero.title}
+            </span>
+          </motion.h1>
+
+          <motion.p
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.1 }}
+            className="mt-4 max-w-xl text-sm leading-relaxed text-slate-300 sm:text-base"
+          >
+            {dict.hero.description}
+          </motion.p>
+
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.15 }}
+            className="mt-7 grid w-full max-w-xl gap-3 sm:grid-cols-3"
+          >
+            <div className="rounded-xl border border-cyan-400/30 bg-slate-950/70 px-4 py-3">
+              <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Sampling</p>
+              <p className="mt-1 text-sm font-semibold text-zinc-100">Every 60s</p>
+            </div>
+            <div className="rounded-xl border border-cyan-400/30 bg-slate-950/70 px-4 py-3">
+              <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Coverage</p>
+              <p className="mt-1 text-sm font-semibold text-zinc-100">Bus, Metro, Trolley</p>
+            </div>
+            <div className="rounded-xl border border-cyan-400/30 bg-slate-950/70 px-4 py-3">
+              <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Access</p>
+              <p className="mt-1 text-sm font-semibold text-zinc-100">
+                {session ? "Dashboard Ready" : "Public Preview"}
+              </p>
+            </div>
           </motion.div>
         </div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.12 }}
+          className="rounded-3xl border border-cyan-400/20 bg-slate-950/70 p-2 shadow-[0_16px_54px_rgba(8,47,73,0.45)] backdrop-blur-xl"
+        >
+          <div className="overflow-hidden rounded-2xl border border-slate-800/80">
+            <AirQualityMap
+              readings={mapReadings}
+              emptyStateText="No geocoded route data yet."
+              heightClass="h-[260px] sm:h-[330px] md:h-[380px] lg:h-[460px]"
+              className="rounded-none border-0"
+              showLegend={false}
+            />
+          </div>
+        </motion.div>
       </div>
     </section>
   );

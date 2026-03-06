@@ -4,6 +4,8 @@ import {
   generateDataHash,
   type SensorReadingPayload 
 } from '@/lib/sensor-validation';
+import { getSession } from '@/lib/auth';
+import { getUserByEmail, getRecentSensorReadings } from '@/lib/data-access';
 import { 
   insertSensorReading,
   findOrCreateSensor,
@@ -12,6 +14,93 @@ import {
 } from '@/lib/sensor-data-access';
 
 export const dynamic = 'force-dynamic';
+
+type DeviceStatus = 'online' | 'idle' | 'offline';
+
+function parseCoords(location?: string | null) {
+  if (!location) return null;
+
+  const [latStr, lngStr] = location.split(',').map((part) => part.trim());
+  const latitude = Number(latStr);
+  const longitude = Number(lngStr);
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+
+  return { latitude, longitude };
+}
+
+function deriveStatus(lastSeenAt: Date): DeviceStatus {
+  const ageMs = Date.now() - lastSeenAt.getTime();
+  const ageMinutes = ageMs / 60000;
+
+  if (ageMinutes <= 15) return 'online';
+  if (ageMinutes <= 120) return 'idle';
+  return 'offline';
+}
+
+/**
+ * GET /api/v1/sensor-data
+ *
+ * Returns latest device snapshot list for current user.
+ * Requires authenticated session.
+ */
+export async function GET() {
+  try {
+    const session = await getSession();
+
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const user = await getUserByEmail(session.user.email);
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    const readings = await getRecentSensorReadings(user.id, 1000);
+    const latestByDevice = new Map<string, (typeof readings)[number]>();
+
+    for (const reading of readings) {
+      if (!reading.sensorId || latestByDevice.has(reading.sensorId)) {
+        continue;
+      }
+      latestByDevice.set(reading.sensorId, reading);
+    }
+
+    const devices = Array.from(latestByDevice.entries())
+      .map(([deviceId, reading]) => {
+        const coords = parseCoords(reading.location);
+        if (!coords) return null;
+
+        const ingestedAt =
+          reading.ingestedAt instanceof Date ? reading.ingestedAt : new Date(reading.ingestedAt);
+
+        if (Number.isNaN(ingestedAt.getTime())) return null;
+
+        return {
+          id: deviceId,
+          name: deviceId,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          status: deriveStatus(ingestedAt),
+          lastSeenAt: ingestedAt.toISOString(),
+        };
+      })
+      .filter((device): device is NonNullable<typeof device> => device !== null);
+
+    return NextResponse.json({ devices });
+  } catch (error) {
+    console.error('Error fetching device snapshots:', error);
+    return NextResponse.json(
+      {
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      },
+      { status: 500 }
+    );
+  }
+}
 
 /**
  * POST /api/v1/sensor-data

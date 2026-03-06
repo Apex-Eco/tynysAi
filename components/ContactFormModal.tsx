@@ -42,10 +42,10 @@ type FormErrors = {
 };
 
 const SUBJECT_OPTIONS = [
-  { value: 'general', label: 'General Inquiry' },
-  { value: 'support', label: 'Technical Support' },
+  { value: 'demo', label: 'Demo Request' },
+  { value: 'pilot', label: 'Pilot Program' },
+  { value: 'pricing', label: 'Pricing' },
   { value: 'partnership', label: 'Partnership' },
-  { value: 'feedback', label: 'Feedback' },
   { value: 'other', label: 'Other' },
 ];
 
@@ -55,7 +55,7 @@ export function ContactFormModal({ open, onOpenChange }: ContactFormModalProps) 
   const [formData, setFormData] = useState<FormData>({
     name: '',
     email: '',
-    subject: 'general',
+    subject: 'demo',
     message: '',
   });
   const [errors, setErrors] = useState<FormErrors>({});
@@ -111,7 +111,7 @@ export function ContactFormModal({ open, onOpenChange }: ContactFormModalProps) 
     try {
       // Prepare email content
       const subject = encodeURIComponent(
-        `[${SUBJECT_OPTIONS.find(opt => opt.value === formData.subject)?.label || 'General Inquiry'}] Contact from ${formData.name}`
+        `[${SUBJECT_OPTIONS.find(opt => opt.value === formData.subject)?.label || 'Demo Request'}] Request from ${formData.name}`
       );
       
       const body = encodeURIComponent(
@@ -132,7 +132,7 @@ export function ContactFormModal({ open, onOpenChange }: ContactFormModalProps) 
         setFormData({
           name: '',
           email: '',
-          subject: 'general',
+          subject: 'demo',
           message: '',
         });
         setErrors({});
@@ -159,7 +159,7 @@ export function ContactFormModal({ open, onOpenChange }: ContactFormModalProps) 
       setFormData({
         name: '',
         email: '',
-        subject: 'general',
+        subject: 'demo',
         message: '',
       });
       setErrors({});
@@ -178,10 +178,10 @@ export function ContactFormModal({ open, onOpenChange }: ContactFormModalProps) 
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold flex items-center gap-2">
             <Mail className="h-5 w-5 text-teal-600 dark:text-teal-400" />
-            Contact Us
+            Request a demo
           </DialogTitle>
           <DialogDescription className="text-base pt-2">
-            Fill out the form below and we&apos;ll open your email client to send us a message. We&apos;ll get back to you as soon as possible.
+            Fill this in and we&apos;ll open your email client with a prefilled demo request.
           </DialogDescription>
         </DialogHeader>
 

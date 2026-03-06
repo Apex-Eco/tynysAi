@@ -1,47 +1,105 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
-import { MapContainer, TileLayer, useMap } from "react-leaflet";
+import { useEffect, useMemo, useState } from "react";
+import { Circle, CircleMarker, MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import type { LatLngTuple } from "leaflet";
 import L from "leaflet";
+import { usePathname } from "next/navigation";
 import "leaflet/dist/leaflet.css";
-import "leaflet.markercluster";
-import "leaflet.markercluster/dist/MarkerCluster.css";
-import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import { cn } from "@/lib/utils";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { DeviceDetailModal, type DeviceDetails } from "@/components/device-detail-modal";
 
 export type MapReading = {
   location?: string | null;
   value: number;
-  timestamp: string;
+  timestamp?: string | null;
   sensorId: string;
+  mainReadings?: {
+    pm25?: number;
+    pm10?: number;
+    co2?: number;
+    temperatureC?: number;
+    humidityPct?: number;
+  };
 };
 
-const AQI_BREAKPOINTS = [
-  { limit: 12, color: "#22c55e", label: "Good", range: "0-50", tw: "bg-green-500" },
-  { limit: 35.4, color: "#84cc16", label: "Moderate", range: "51-100", tw: "bg-lime-500" },
-  { limit: 55.4, color: "#eab308", label: "USG", range: "101-150", tw: "bg-amber-500" },
-  { limit: 150.4, color: "#f97316", label: "Unhealthy", range: "151-200", tw: "bg-orange-500" },
-  { limit: 250.4, color: "#ef4444", label: "Very Unhealthy", range: "201-300", tw: "bg-red-500" },
-  { limit: Infinity, color: "#7e22ce", label: "Hazardous", range: "300+", tw: "bg-purple-700" },
-];
+type AqiKey = "good" | "moderate" | "usg" | "unhealthy" | "veryUnhealthy" | "hazardous";
 
-const AQI_LEVELS = [
-  { label: "Good", colorClass: "bg-[#22c55e]", range: "0-50" },
-  { label: "Moderate", colorClass: "bg-[#84cc16]", range: "51-100" },
-  { label: "USG", colorClass: "bg-[#eab308]", range: "101-150" },
-  { label: "Unhealthy", colorClass: "bg-[#f97316]", range: "151-200" },
-  { label: "Very Unhealthy", colorClass: "bg-[#ef4444]", range: "201-300" },
-  { label: "Hazardous", colorClass: "bg-[#7e22ce]", range: "300+" },
-];
+const AQI_BREAKPOINTS = [
+  { key: "good" as AqiKey, limit: 12, color: "#22c55e", range: "0-50" },
+  { key: "moderate" as AqiKey, limit: 35.4, color: "#84cc16", range: "51-100" },
+  { key: "usg" as AqiKey, limit: 55.4, color: "#eab308", range: "101-150" },
+  { key: "unhealthy" as AqiKey, limit: 150.4, color: "#f97316", range: "151-200" },
+  { key: "veryUnhealthy" as AqiKey, limit: 250.4, color: "#ef4444", range: "201-300" },
+  { key: "hazardous" as AqiKey, limit: Infinity, color: "#7e22ce", range: "300+" },
+] as const;
 
 const DEFAULT_CENTER: LatLngTuple = [37.0902, -95.7129];
+
+const MAP_TEXT: Record<
+  "en" | "ru" | "kz",
+  {
+    good: string;
+    moderate: string;
+    usg: string;
+    unhealthy: string;
+    veryUnhealthy: string;
+    hazardous: string;
+    avg: string;
+    latest: string;
+    samples: string;
+    nearbyAqi: string;
+    locating: string;
+    kmAway: string;
+    userLocation: string;
+  }
+> = {
+  en: {
+    good: "Good",
+    moderate: "Moderate",
+    usg: "USG",
+    unhealthy: "Unhealthy",
+    veryUnhealthy: "Very Unhealthy",
+    hazardous: "Hazardous",
+    avg: "Avg",
+    latest: "Latest",
+    samples: "Samples",
+    nearbyAqi: "Nearby AQI",
+    locating: "Locating...",
+    kmAway: "km away",
+    userLocation: "Your location",
+  },
+  ru: {
+    good: "Хорошо",
+    moderate: "Умеренно",
+    usg: "USG",
+    unhealthy: "Нездорово",
+    veryUnhealthy: "Очень нездорово",
+    hazardous: "Опасно",
+    avg: "Средн.",
+    latest: "Послед.",
+    samples: "Образцы",
+    nearbyAqi: "AQI рядом",
+    locating: "Определяем...",
+    kmAway: "км",
+    userLocation: "Ваше местоположение",
+  },
+  kz: {
+    good: "Жақсы",
+    moderate: "Орташа",
+    usg: "USG",
+    unhealthy: "Зиянды",
+    veryUnhealthy: "Өте зиянды",
+    hazardous: "Қауіпті",
+    avg: "Орташа",
+    latest: "Соңғы",
+    samples: "Үлгілер",
+    nearbyAqi: "Жақын AQI",
+    locating: "Анықталуда...",
+    kmAway: "км",
+    userLocation: "Сіздің орныңыз",
+  },
+};
 
 function parseLocation(location?: string | null): LatLngTuple | null {
   if (!location) return null;
@@ -61,24 +119,17 @@ type AggregatedPoint = {
   count: number;
   avgValue: number;
   latestValue: number;
-  lastTimestamp: string;
+  lastTimestamp: string | null;
   sensorIds: string[];
+  readings: MapReading[];
 };
 
-type MarkerCluster = {
-  getAllChildMarkers: () => L.Marker[];
-};
-
-type MarkerClusterGroup = L.LayerGroup & {
-  addLayer: (layer: L.Layer) => MarkerClusterGroup;
-};
-
-type MarkerClusterGroupFactory = (options?: {
-  iconCreateFunction?: (cluster: MarkerCluster) => L.DivIcon;
-  chunkedLoading?: boolean;
-  showCoverageOnHover?: boolean;
-  spiderfyOnMaxZoom?: boolean;
-}) => MarkerClusterGroup;
+function normalizeTimestamp(timestamp?: string | null): string | null {
+  if (!timestamp) return null;
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+}
 
 function aggregatePoints(readings: MapReading[]): AggregatedPoint[] {
   const map = new Map<string, AggregatedPoint>();
@@ -89,7 +140,7 @@ function aggregatePoints(readings: MapReading[]): AggregatedPoint[] {
 
     const key = reading.location!.trim();
     const existing = map.get(key);
-    const timestamp = new Date(reading.timestamp).toISOString();
+    const timestamp = normalizeTimestamp(reading.timestamp);
 
     if (!existing) {
       map.set(key, {
@@ -100,13 +151,16 @@ function aggregatePoints(readings: MapReading[]): AggregatedPoint[] {
         latestValue: reading.value,
         lastTimestamp: timestamp,
         sensorIds: [reading.sensorId],
+        readings: [reading],
       });
       return;
     }
 
     const count = existing.count + 1;
     const avgValue = (existing.avgValue * existing.count + reading.value) / count;
-    const isNewer = timestamp > existing.lastTimestamp;
+    const isNewer =
+      !existing.lastTimestamp
+      || (Boolean(timestamp) && (timestamp as string) > existing.lastTimestamp);
 
     const sensorIds = existing.sensorIds.includes(reading.sensorId)
       ? existing.sensorIds
@@ -119,69 +173,71 @@ function aggregatePoints(readings: MapReading[]): AggregatedPoint[] {
       latestValue: isNewer ? reading.value : existing.latestValue,
       lastTimestamp: isNewer ? timestamp : existing.lastTimestamp,
       sensorIds,
+      readings: [...existing.readings, reading],
     });
   });
 
   return Array.from(map.values());
 }
-function createPointIcon(value: number) {
-  const safeValue = Number.isFinite(value) ? value : 0;
-  const bp = AQI_BREAKPOINTS.find((b) => safeValue <= b.limit) ?? AQI_BREAKPOINTS[AQI_BREAKPOINTS.length - 1];
-  const html = `
-    <div class="flex items-center justify-center rounded-full text-[10px] font-semibold text-primary-foreground shadow-lg border border-border/70 ${bp.tw}"
-         style="width:28px;height:28px;">
-      ${Math.round(safeValue)}
-    </div>
-  `;
 
-  const iconOptions: L.DivIconOptions & { aqiValue: number } = {
-    className: "aqi-point-icon",
-    html,
+function getAqiStyle(value: number) {
+  const safeValue = Number.isFinite(value) ? value : 0;
+  return AQI_BREAKPOINTS.find((b) => safeValue <= b.limit) ?? AQI_BREAKPOINTS[AQI_BREAKPOINTS.length - 1];
+}
+
+function createNumericIcon(value: number, color: string) {
+  return L.divIcon({
+    className: "aqi-number-icon",
+    html: `
+      <div style="
+        width: 28px;
+        height: 28px;
+        border-radius: 9999px;
+        background: ${color};
+        border: 2px solid rgba(15, 23, 42, 0.9);
+        color: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        font-weight: 700;
+        line-height: 1;
+      ">${Math.round(value)}</div>
+    `,
     iconSize: [28, 28],
     iconAnchor: [14, 14],
     popupAnchor: [0, -14],
-    aqiValue: value,
-  };
-
-  return L.divIcon(iconOptions);
-}
-
-function createClusterIcon(cluster: MarkerCluster) {
-  const childMarkers = cluster.getAllChildMarkers() as L.Marker[];
-  const values = childMarkers.map((m) => {
-    const opts = (m.options.icon?.options ?? {}) as { aqiValue?: number };
-    return opts.aqiValue ?? 0;
   });
-
-  const avg = values.length ? values.reduce((s, v) => s + (Number.isFinite(v) ? v : 0), 0) / values.length : 0;
-  const bp = AQI_BREAKPOINTS.find((b) => avg <= b.limit) ?? AQI_BREAKPOINTS[AQI_BREAKPOINTS.length - 1];
-  const size = Math.min(44 + values.length, 76);
-
-  const html = `
-    <div class="flex items-center justify-center rounded-full text-xs font-semibold text-primary-foreground shadow-lg border border-border/70 ${bp.tw}"
-         style="width:${size}px;height:${size}px;">
-      ${values.length}
-    </div>
-  `;
-
-  const iconOptions: L.DivIconOptions = {
-    className: "aqi-cluster-icon",
-    html,
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
-  };
-
-  return L.divIcon(iconOptions);
 }
 
-function FitToMarkers({ points }: { points: AggregatedPoint[] }) {
+function FitToMarkers({
+  points,
+  userLocation,
+  useUserLocation,
+}: {
+  points: AggregatedPoint[];
+  userLocation: LatLngTuple | null;
+  useUserLocation: boolean;
+}) {
   const map = useMap();
 
   useEffect(() => {
-    if (!map || points.length === 0) return;
-    const bounds = L.latLngBounds(points.map((p) => p.coords));
-    map.fitBounds(bounds, { padding: [32, 32], maxZoom: 13 });
-  }, [map, points]);
+    if (!map) return;
+
+    const coords = points.map((p) => p.coords);
+    if (useUserLocation && userLocation) {
+      coords.push(userLocation);
+    }
+
+    if (coords.length === 0) return;
+    if (coords.length === 1) {
+      map.setView(coords[0], 12);
+      return;
+    }
+
+    const bounds = L.latLngBounds(coords);
+    map.fitBounds(bounds, { padding: [24, 24], maxZoom: useUserLocation ? 13 : 12 });
+  }, [map, points, userLocation, useUserLocation]);
 
   return null;
 }
@@ -191,22 +247,81 @@ export function AirQualityMap({
   emptyStateText,
   heightClass = "h-[420px]",
   className,
+  showLegend = true,
+  useUserLocation = false,
+  showUserStatus = false,
 }: {
   readings: MapReading[];
   emptyStateText: string;
   heightClass?: string;
   className?: string;
+  showLegend?: boolean;
+  useUserLocation?: boolean;
+  showUserStatus?: boolean;
 }) {
+  const pathname = usePathname();
+  const pathnameLocale = (pathname?.split("/")[1] ?? "en") as "en" | "ru" | "kz";
+  const locale = pathnameLocale === "ru" || pathnameLocale === "kz" ? pathnameLocale : "en";
+  const text = MAP_TEXT[locale];
+
   const points = useMemo(() => aggregatePoints(readings), [readings]);
+  const [userLocation, setUserLocation] = useState<LatLngTuple | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
+  const [selectedDevice, setSelectedDevice] = useState<DeviceDetails | null>(null);
+  const [isDeviceModalOpen, setIsDeviceModalOpen] = useState(false);
 
   const center = useMemo<LatLngTuple>(() => {
     if (points.length === 0) return DEFAULT_CENTER;
     const [latSum, lngSum] = points.reduce(
       (acc, point) => [acc[0] + point.coords[0], acc[1] + point.coords[1]],
-      [0, 0]
+      [0, 0],
     );
     return [latSum / points.length, lngSum / points.length];
   }, [points]);
+
+  useEffect(() => {
+    if (!useUserLocation || typeof window === "undefined" || !("geolocation" in navigator)) {
+      return;
+    }
+
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLocation([pos.coords.latitude, pos.coords.longitude]);
+        setIsLocating(false);
+      },
+      () => {
+        setIsLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 120000 },
+    );
+  }, [useUserLocation]);
+
+  const nearestAqi = useMemo(() => {
+    if (!userLocation || points.length === 0) return null;
+
+    let best: AggregatedPoint | null = null;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (const point of points) {
+      const dLat = point.coords[0] - userLocation[0];
+      const dLng = point.coords[1] - userLocation[1];
+      const dist = dLat * dLat + dLng * dLng;
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = point;
+      }
+    }
+
+    if (!best) return null;
+    const category = getAqiStyle(best.avgValue);
+    const distanceKm = Math.sqrt(bestDist) * 111;
+    return {
+      value: best.avgValue,
+      color: category.color,
+      label: text[category.key],
+      distanceKm,
+    };
+  }, [userLocation, points, text]);
 
   if (points.length === 0) {
     return (
@@ -222,115 +337,137 @@ export function AirQualityMap({
   }
 
   return (
-    <div
-      className={cn(
-        "relative flex h-full flex-col rounded-lg border border-slate-800/70 bg-background",
-        heightClass,
-        className
-      )}
-    >
-      <div className="relative flex flex-wrap items-center gap-4 overflow-visible border-b border-slate-800/60 bg-background/80 px-4 py-2 backdrop-blur">
-        <LegendBar />
-      </div>
+    <>
+      <div
+        className={cn(
+          "relative flex h-full flex-col rounded-lg bg-background",
+          heightClass,
+          className,
+        )}
+      >
+        {showLegend ? (
+          <div className="relative flex flex-wrap items-center gap-3 border-b border-slate-800/60 bg-background/80 px-3 py-2">
+            <LegendBar text={text} />
+          </div>
+        ) : null}
 
-      <div className="relative flex-1 overflow-hidden rounded-b-lg">
-        <MapContainer
-          center={center}
-          zoom={5}
-          scrollWheelZoom
-          className="h-full w-full bg-background z-0"
-        >
-          <TileLayer
-            attribution="&copy; OpenStreetMap contributors"
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
-          <FitToMarkers points={points} />
-          {/* ClusterLayer uses the upstream leaflet.markercluster plugin directly */}
-          <ClusterLayer points={points} />
-        </MapContainer>
+        {showUserStatus ? (
+          <div className="absolute left-3 top-3 z-[500]">
+            <div className="rounded-lg border border-slate-700/80 bg-slate-950/90 px-3 py-2 text-xs text-slate-200 shadow-lg">
+              <p className="text-[10px] uppercase tracking-[0.12em] text-slate-400">{text.nearbyAqi}</p>
+              {isLocating ? (
+                <p className="mt-1 text-slate-200">{text.locating}</p>
+              ) : nearestAqi ? (
+                <p className="mt-1 font-semibold" style={{ color: nearestAqi.color }}>
+                  {Math.round(nearestAqi.value)} · {nearestAqi.label} · {nearestAqi.distanceKm.toFixed(1)} {text.kmAway}
+                </p>
+              ) : (
+                <p className="mt-1 text-slate-300">—</p>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        <div className={cn("relative flex-1 overflow-hidden", showLegend ? "rounded-b-lg" : "rounded-lg")}>
+          <MapContainer
+            center={center}
+            zoom={6}
+            scrollWheelZoom={true}
+            touchZoom={true}
+            dragging={true}
+            zoomControl={true}
+            preferCanvas
+            fadeAnimation={false}
+            zoomAnimation={false}
+            markerZoomAnimation={false}
+            className="h-full w-full bg-background"
+          >
+            <TileLayer
+              attribution="&copy; OpenStreetMap contributors"
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            <FitToMarkers points={points} userLocation={userLocation} useUserLocation={useUserLocation} />
+
+            {points.map((point) => {
+              const aqi = getAqiStyle(point.avgValue);
+              return (
+                <Marker
+                  key={point.key}
+                  position={point.coords}
+                  icon={createNumericIcon(point.avgValue, aqi.color)}
+                  eventHandlers={{
+                    click: () => {
+                      const sortedReadings = [...point.readings].sort((a, b) => {
+                        const aTs = normalizeTimestamp(a.timestamp);
+                        const bTs = normalizeTimestamp(b.timestamp);
+                        if (!aTs && !bTs) return 0;
+                        if (!aTs) return 1;
+                        if (!bTs) return -1;
+                        return bTs.localeCompare(aTs);
+                      });
+
+                      setSelectedDevice({
+                        location: point.key,
+                        avgValue: point.avgValue,
+                        latestValue: point.latestValue,
+                        sampleCount: point.count,
+                        sensorIds: point.sensorIds,
+                        readings: sortedReadings,
+                      });
+                      setIsDeviceModalOpen(true);
+                    },
+                  }}
+                >
+                  <Popup>
+                    <div className="space-y-1 text-xs">
+                      <p className="font-semibold">{point.key}</p>
+                      <p>{text.avg}: {point.avgValue.toFixed(1)}</p>
+                      <p>{text.latest}: {point.latestValue.toFixed(1)}</p>
+                      <p>{text.samples}: {point.count}</p>
+                      <p className="pt-1 text-[11px] text-slate-500">Click marker for full device data</p>
+                    </div>
+                  </Popup>
+                </Marker>
+              );
+            })}
+
+            {userLocation ? (
+              <>
+                <Circle center={userLocation} radius={1000} pathOptions={{ color: "#38bdf8", weight: 1, fillOpacity: 0.08 }} />
+                <CircleMarker
+                  center={userLocation}
+                  radius={7}
+                  pathOptions={{ color: "#38bdf8", fillColor: "#38bdf8", fillOpacity: 1, weight: 2 }}
+                >
+                  <Popup>{text.userLocation}</Popup>
+                </CircleMarker>
+              </>
+            ) : null}
+          </MapContainer>
+        </div>
       </div>
+      <DeviceDetailModal
+        open={isDeviceModalOpen}
+        onOpenChange={setIsDeviceModalOpen}
+        details={selectedDevice}
+      />
+    </>
+  );
+}
+
+function LegendBar({ text }: { text: Record<AqiKey, string> & Record<string, string> }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+      {AQI_BREAKPOINTS.map((level) => (
+        <div
+          key={level.key}
+          className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/80 px-2.5 py-1"
+        >
+          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: level.color }} aria-hidden />
+          <span className="font-medium text-foreground">{text[level.key]}</span>
+          <span className="text-muted-foreground">({level.range})</span>
+        </div>
+      ))}
     </div>
   );
-}
-
-function LegendBar() {
-  return (
-    <TooltipProvider delayDuration={200}>
-      <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-        {AQI_LEVELS.filter((l) => l && l.label).map((level) => (
-          <Tooltip key={level.label}>
-            <TooltipTrigger asChild>
-              <div className="inline-flex cursor-default items-center gap-2">
-                <span className={cn("h-2.5 w-2.5 rounded-full", level.colorClass || "bg-gray-400")} aria-hidden />
-                <span className="font-medium text-foreground/90">{level.label}</span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
-              <span className="text-muted-foreground">AQI Range: </span>
-              <span className="font-semibold">{level.range ?? "—"}</span>
-            </TooltipContent>
-          </Tooltip>
-        ))}
-      </div>
-    </TooltipProvider>
-  );
-}
-
-/**
- * ClusterLayer: Create a markerClusterGroup and add markers for every aggregated point.
- * This uses the global L.markerClusterGroup provided by leaflet.markercluster.
- */
-function ClusterLayer({ points }: { points: AggregatedPoint[] }) {
-  const map = useMap();
-
-  useEffect(() => {
-    if (!map) return;
-
-    const markerClusterGroup = (L as typeof L & { markerClusterGroup?: MarkerClusterGroupFactory }).markerClusterGroup;
-    if (!markerClusterGroup) return;
-
-    const clusterGroup = markerClusterGroup({
-      iconCreateFunction: (cluster) => createClusterIcon(cluster),
-      chunkedLoading: true,
-      showCoverageOnHover: false,
-      spiderfyOnMaxZoom: true,
-    });
-
-    points.forEach((point) => {
-      const marker = L.marker(point.coords, { icon: createPointIcon(point.avgValue) });
-
-      const tooltipHtml = `
-        <div class="space-y-1 text-xs">
-          <div class="font-semibold">${point.key}</div>
-          <div>Avg: ${point.avgValue.toFixed(1)}</div>
-          <div>Latest: ${point.latestValue.toFixed(1)}</div>
-          <div>Samples: ${point.count}</div>
-        </div>
-      `;
-      marker.bindTooltip(tooltipHtml, { direction: "top", offset: [0, -2], permanent: false, sticky: true });
-
-      const sensorsHtml = point.sensorIds.map((id) => `<a href="/sensors/${encodeURIComponent(id)}" target="_blank" class="text-blue-600 underline">${id}</a>`).join("<br/>");
-      const popupHtml = `
-        <div class="space-y-1 text-sm">
-          <div class="font-semibold">${point.key}</div>
-          <div>Avg: ${point.avgValue.toFixed(2)}</div>
-          <div>Latest: ${point.latestValue.toFixed(2)}</div>
-          <div>Samples: ${point.count}</div>
-          <div class="text-xs text-muted-foreground">Sensors:<br/>${sensorsHtml}</div>
-          <div class="text-[11px] text-muted-foreground">Updated: ${new Date(point.lastTimestamp).toLocaleString()}</div>
-        </div>
-      `;
-      marker.bindPopup(popupHtml);
-
-      clusterGroup.addLayer(marker);
-    });
-
-    map.addLayer(clusterGroup);
-
-    return () => {
-      map.removeLayer(clusterGroup);
-    };
-  }, [map, points]);
-
-  return null;
 }

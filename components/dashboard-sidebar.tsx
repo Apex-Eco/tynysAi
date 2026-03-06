@@ -7,7 +7,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { i18n } from "@/lib/i18n/config";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import DarkModeToggle from "@/components/dark-mode-toggle";
 import {
   LayoutDashboard,
   Users,
@@ -181,12 +180,6 @@ export function DashboardSidebar({ user }: DashboardSidebarProps) {
 
       {/* Bottom Actions */}
       <div className="border-t border-border p-4 space-y-2">
-        <div className={cn("flex items-center gap-2", isCollapsed && "flex-col")}>
-          {!isCollapsed && (
-            <span className="text-base font-semibold flex-1">Theme</span>
-          )}
-          <DarkModeToggle />
-        </div>
         <button
           onClick={handleSignOut}
           className={cn(
@@ -247,4 +240,3 @@ export function DashboardSidebar({ user }: DashboardSidebarProps) {
     </>
   );
 }
-

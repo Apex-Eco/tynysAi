@@ -196,7 +196,7 @@ export default function SignUpPage() {
         <CardHeader className="space-y-3 text-center">
           <div className="flex items-center justify-center gap-2 mb-2">
             <Image 
-              src="/tynys-logo.png" 
+              src="/tynys-logo.webp" 
               alt="Tynys Logo" 
               width={40} 
               height={40}
