@@ -6,32 +6,25 @@ import {
   LiveFeedOverlay,
   type LiveFeedItem,
 } from "@/components/live-feed-overlay";
+import { cn } from "@/lib/utils";
 
 type AirQualityMapProps = {
   readings: MapReading[];
   emptyStateText: string;
   heightClass?: string;
   className?: string;
+  showLegend?: boolean;
+  useUserLocation?: boolean;
+  showUserStatus?: boolean;
 };
 
 const AirQualityMap = dynamic<AirQualityMapProps>(
   () => import("@/components/air-quality-map").then((mod) => mod.AirQualityMap),
-  { ssr: false }
+  {
+    ssr: false,
+    loading: () => <div className="h-full min-h-[360px] animate-pulse bg-slate-900/70" />,
+  }
 );
-
-export interface StatLabels {
-  totalDataPoints: string;
-  activeSensors: string;
-  recentReadings: string;
-  averageValue: string;
-}
-
-export interface StatValues {
-  totalDataPoints: number;
-  activeSensors: number;
-  recentReadings: number;
-  avgSensorValue: string;
-}
 
 interface DashboardMapPanelProps {
   readings: MapReading[];
@@ -39,6 +32,11 @@ interface DashboardMapPanelProps {
   recentActivity: LiveFeedItem[];
   feedTitle: string;
   feedEmptyText: string;
+  mapHeightClass?: string;
+  backgroundMode?: boolean;
+  className?: string;
+  showFeedOverlay?: boolean;
+  mobileMode?: boolean;
 }
 
 export function DashboardMapPanel({
@@ -47,9 +45,33 @@ export function DashboardMapPanel({
   recentActivity,
   feedTitle,
   feedEmptyText,
+  mapHeightClass = "h-[72vh] min-h-[520px] md:h-[80vh]",
+  backgroundMode = false,
+  className,
+  showFeedOverlay = true,
+  mobileMode = false,
 }: DashboardMapPanelProps) {
+  if (backgroundMode) {
+    return (
+      <div className={cn("fixed inset-0 -z-10 overflow-hidden", className)}>
+        <AirQualityMap
+          readings={readings}
+          emptyStateText={emptyMapText}
+          heightClass={mapHeightClass}
+          className="h-full rounded-none border-0"
+          showLegend
+          useUserLocation={mobileMode}
+          showUserStatus={mobileMode}
+        />
+        {showFeedOverlay ? (
+          <LiveFeedOverlay title={feedTitle} emptyText={feedEmptyText} items={recentActivity} />
+        ) : null}
+      </div>
+    );
+  }
+
   return (
-    <section className="relative rounded-2xl border bg-muted/10 shadow-sm">
+    <section className={cn("relative rounded-2xl border bg-muted/10 shadow-sm", className)}>
       <div className="space-y-3">
         <div className="flex items-center px-4 pt-3">
           <div className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
@@ -62,14 +84,16 @@ export function DashboardMapPanel({
             <AirQualityMap
               readings={readings}
               emptyStateText={emptyMapText}
-              heightClass="h-[90vh]"
+              heightClass={mapHeightClass}
               className="rounded-2xl"
             />
           </div>
         </div>
       </div>
 
-      <LiveFeedOverlay title={feedTitle} emptyText={feedEmptyText} items={recentActivity} />
+      {showFeedOverlay ? (
+        <LiveFeedOverlay title={feedTitle} emptyText={feedEmptyText} items={recentActivity} />
+      ) : null}
     </section>
   );
 }

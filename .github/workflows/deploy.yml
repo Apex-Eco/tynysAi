@@ -119,15 +119,14 @@ jobs:
             git fetch origin
             git reset --hard origin/main
 
-              echo "==> Writing .env from GitHub secrets..."
-              cat > .env <<'EOF'
-POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
-NEXTAUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}
-IOT_DEVICE_SECRET=${{ secrets.IOT_DEVICE_SECRET }}
-APP_PORT=${{ secrets.APP_PORT }}
-EOF
+            echo "==> Writing .env from GitHub secrets..."
+            printf '%s\n' \
+              "POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password123}" \
+              "NEXTAUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}" \
+              "IOT_DEVICE_SECRET=${{ secrets.IOT_DEVICE_SECRET }}" \
+              "APP_PORT=${APP_PORT:-3010}" > .env
 
-              echo "==> Building Docker image..."
+            echo "==> Building Docker image..."
             BUILD_OK=0
             for i in 1 2 3; do
               if docker compose -f docker-compose.prod.yml build --no-cache; then
@@ -148,7 +147,7 @@ EOF
 
             echo "==> Ensuring Postgres 'admin' password matches .env (idempotent)"
             for i in 1 2 3; do
-              if docker compose -f docker-compose.prod.yml exec -T postgres psql -U postgres -c "ALTER USER admin WITH PASSWORD '${{ secrets.POSTGRES_PASSWORD }}';"; then
+              if docker compose -f docker-compose.prod.yml exec -T postgres psql -U postgres -c "ALTER USER admin WITH PASSWORD '${POSTGRES_PASSWORD:-password123}';"; then
                 echo "Postgres admin password ensured"
                 break
               fi
