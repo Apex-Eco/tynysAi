@@ -10,7 +10,6 @@ on:
 env:
   NODE_VERSION: "20"
   APP_PORT: "3010"
-  CI_POSTGRES_PASSWORD: ci_local_password
 
 permissions:
   contents: read
@@ -51,7 +50,7 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_USER: admin
-          POSTGRES_PASSWORD: ${{ env.CI_POSTGRES_PASSWORD }}
+          POSTGRES_PASSWORD: ci_local_password
           POSTGRES_DB: tynysdb
         ports:
           - 5433:5432
@@ -74,14 +73,14 @@ jobs:
       - name: Push DB schema
         run: npx drizzle-kit push
         env:
-          DATABASE_URL: postgresql://admin:${{ env.CI_POSTGRES_PASSWORD }}@localhost:5433/tynysdb
-          DB_URL: postgresql://admin:${{ env.CI_POSTGRES_PASSWORD }}@localhost:5433/tynysdb
+          DATABASE_URL: postgresql://admin:ci_local_password@localhost:5433/tynysdb
+          DB_URL: postgresql://admin:ci_local_password@localhost:5433/tynysdb
 
       - name: Build Next.js
         run: npm run build
         env:
-          DATABASE_URL: postgresql://admin:${{ env.CI_POSTGRES_PASSWORD }}@localhost:5433/tynysdb
-          DB_URL: postgresql://admin:${{ env.CI_POSTGRES_PASSWORD }}@localhost:5433/tynysdb
+          DATABASE_URL: postgresql://admin:ci_local_password@localhost:5433/tynysdb
+          DB_URL: postgresql://admin:ci_local_password@localhost:5433/tynysdb
           NEXTAUTH_URL: http://localhost:3000
           NEXTAUTH_SECRET: ci_nextauth_secret_for_build_only
 
