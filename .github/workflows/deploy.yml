@@ -112,6 +112,7 @@ jobs:
           [ -n "${{ secrets.SSH_HOST }}" ] || { echo "Missing SSH_HOST"; exit 1; }
           [ -n "${{ secrets.SSH_USER }}" ] || { echo "Missing SSH_USER"; exit 1; }
           [ -n "${{ secrets.SSH_KEY }}" ] || { echo "Missing SSH_KEY"; exit 1; }
+          [ -n "${{ secrets.POSTGRES_PASSWORD }}" ] || { echo "Missing POSTGRES_PASSWORD"; exit 1; }
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -135,8 +136,8 @@ jobs:
             IOT_DEVICE_SECRET_VALUE="${{ secrets.IOT_DEVICE_SECRET }}"
 
             if [ -z "$POSTGRES_PASSWORD_VALUE" ]; then
-              echo "Warning: POSTGRES_PASSWORD secret missing, using fallback value"
-              POSTGRES_PASSWORD_VALUE="password123"
+              echo "Missing POSTGRES_PASSWORD secret"
+              exit 1
             fi
 
             if [ -z "$NEXTAUTH_SECRET_VALUE" ]; then
@@ -197,14 +198,31 @@ jobs:
             docker compose -f docker-compose.prod.yml up -d --remove-orphans
 
             echo "==> Ensuring Postgres 'admin' password matches .env (idempotent)"
+            PASSWORD_SYNCED=0
             for i in 1 2 3; do
-              if docker compose -f docker-compose.prod.yml exec -T postgres psql -U postgres -c "ALTER USER admin WITH PASSWORD '${POSTGRES_PASSWORD_VALUE}';"; then
+              # Most environments use 'admin' as the bootstrap superuser.
+              if docker compose -f docker-compose.prod.yml exec -T postgres psql -U admin -d postgres -c "ALTER USER admin WITH PASSWORD '${POSTGRES_PASSWORD_VALUE}';"; then
                 echo "Postgres admin password ensured"
+                PASSWORD_SYNCED=1
                 break
               fi
+
+              # Fallback for environments where 'postgres' superuser exists.
+              if docker compose -f docker-compose.prod.yml exec -T postgres psql -U postgres -d postgres -c "ALTER USER admin WITH PASSWORD '${POSTGRES_PASSWORD_VALUE}';"; then
+                echo "Postgres admin password ensured via postgres role"
+                PASSWORD_SYNCED=1
+                break
+              fi
+
               echo "Attempt $i to set admin password failed, retrying in 5s..."
               sleep 5
             done
+
+            if [ "$PASSWORD_SYNCED" -ne 1 ]; then
+              echo "Failed to synchronize Postgres admin password"
+              rollback
+              exit 1
+            fi
 
             echo "==> Running migrations..."
             if ! docker compose -f docker-compose.prod.yml exec -T app npm run migrate; then
