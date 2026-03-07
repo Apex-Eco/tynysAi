@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: admin
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password123}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: tynysdb
     ports:
       - "5433:5432"
@@ -22,18 +22,19 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        DB_URL: postgresql://admin:${POSTGRES_PASSWORD:-password123}@tynys-postgres:5432/tynysdb
+        DB_URL: postgresql://admin:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@tynys-postgres:5432/tynysdb
     container_name: tynys-app
     restart: unless-stopped
     ports:
       - "${APP_PORT:-3010}:3000"
     environment:
       NODE_ENV: production
-      DB_URL: postgresql://admin:${POSTGRES_PASSWORD:-password123}@tynys-postgres:5432/tynysdb
-      DATABASE_URL: postgresql://admin:${POSTGRES_PASSWORD:-password123}@tynys-postgres:5432/tynysdb
-      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3010}
-      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
-      IOT_DEVICE_SECRET: ${IOT_DEVICE_SECRET}
+      DB_URL: postgresql://admin:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@tynys-postgres:5432/tynysdb
+      DATABASE_URL: postgresql://admin:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@tynys-postgres:5432/tynysdb
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:${APP_PORT:-3010}}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?NEXTAUTH_SECRET is required}
+      IOT_DEVICE_SECRET: ${IOT_DEVICE_SECRET:?IOT_DEVICE_SECRET is required}
+      RELEASE_TAG: ${RELEASE_TAG:-local}
     depends_on:
       postgres:
         condition: service_healthy

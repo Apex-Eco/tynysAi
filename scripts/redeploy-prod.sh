@@ -1,63 +1,73 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Interactive prompts
-read -p "Enter docker-compose file path (default: ../docker-compose.prod.yml): " COMPOSE_FILE
-COMPOSE_FILE=${COMPOSE_FILE:-../docker-compose.prod.yml}
+COMPOSE_FILE="${COMPOSE_FILE:-../docker-compose.prod.yml}"
+APP_SERVICE="${APP_SERVICE:-app}"
+APP_CONTAINER="${APP_CONTAINER:-tynys-app}"
+SIGNIN_URL="${SIGNIN_URL:-http://89.218.178.215:3010/en/sign-in}"
+NO_CACHE="${NO_CACHE:-true}"
 
-read -p "Enter app service name (default: app): " APP_SERVICE
-APP_SERVICE=${APP_SERVICE:-app}
+if docker compose version >/dev/null 2>&1; then
+  COMPOSE_CMD=(docker compose)
+elif command -v docker-compose >/dev/null 2>&1; then
+  COMPOSE_CMD=(docker-compose)
+else
+  echo "Neither 'docker compose' nor 'docker-compose' is available."
+  exit 1
+fi
 
-read -p "Enter app container name (default: tynys-app): " APP_CONTAINER
-APP_CONTAINER=${APP_CONTAINER:-tynys-app}
+if [ ! -f "$COMPOSE_FILE" ]; then
+  echo "Compose file not found: $COMPOSE_FILE"
+  exit 1
+fi
 
-read -p "Enter sign-in page URL (default: http://89.218.178.215:3010/en/sign-in): " SIGNIN_URL
-SIGNIN_URL=${SIGNIN_URL:-http://89.218.178.215:3010/en/sign-in}
+if [ -z "${POSTGRES_PASSWORD:-}" ]; then
+  echo "POSTGRES_PASSWORD is required. Export it before running this script."
+  exit 1
+fi
 
-# Print current git commit
+if [ -z "${NEXTAUTH_SECRET:-}" ]; then
+  echo "NEXTAUTH_SECRET is required. Export it before running this script."
+  exit 1
+fi
+
+if [ -z "${IOT_DEVICE_SECRET:-}" ]; then
+  echo "IOT_DEVICE_SECRET is required. Export it before running this script."
+  exit 1
+fi
+
 echo "Current commit: $(git rev-parse HEAD)"
 
-# Print local Next.js build ID
 if [ -f ../.next/BUILD_ID ]; then
   echo "Local Next.js BUILD_ID: $(cat ../.next/BUILD_ID)"
 else
   echo "Local Next.js BUILD_ID: missing"
 fi
 
-# Rebuild Docker image (no cache)
-echo "Building Docker image..."
-if docker compose version >/dev/null 2>&1; then
-  COMPOSE_CMD=(docker compose)
-elif command -v docker-compose >/dev/null 2>&1; then
-  COMPOSE_CMD=(docker-compose)
-else
-  echo "❌ Neither 'docker compose' nor 'docker-compose' found. Install the Compose plugin or docker-compose."
-  exit 1
+BUILD_ARGS=()
+if [ "$NO_CACHE" = "true" ]; then
+  BUILD_ARGS+=(--no-cache)
 fi
 
-"${COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" build --no-cache "$APP_SERVICE"
+echo "Building Docker image..."
+"${COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" build "${BUILD_ARGS[@]}" "$APP_SERVICE"
 
-# Restart app container with new image
-echo "Restarting app container..."
+echo "Restarting app service..."
 "${COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" up -d --force-recreate "$APP_SERVICE"
 
-# Wait for healthy startup
-echo "Waiting for app logs..."
-"${COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" logs -f "$APP_SERVICE" &
-LOGS_PID=$!
-sleep 10
-kill $LOGS_PID || true
+echo "Recent app logs:"
+"${COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" logs --tail=40 "$APP_SERVICE"
 
-# Print running container info
+echo "Running containers:"
 docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
 
-# Print deployed Next.js build ID from container
-docker exec -it "$APP_CONTAINER" sh -lc "cat .next/BUILD_ID || echo 'missing'"
+echo "Container BUILD_ID:"
+docker exec "$APP_CONTAINER" sh -lc "cat .next/BUILD_ID || echo missing"
 
-# Print deployed Node version and NODE_ENV
-docker exec -it "$APP_CONTAINER" sh -lc "node -e \"console.log(process.version, process.env.NODE_ENV)\""
+echo "Container runtime:"
+docker exec "$APP_CONTAINER" sh -lc "node -e \"console.log(process.version, process.env.NODE_ENV, process.env.RELEASE_TAG || 'no-release-tag')\""
 
-# Print deployed sign-in page buildId from HTML
+echo "Sign-in page buildId:"
 curl -s "$SIGNIN_URL" | grep -o '"buildId":"[^\"]*"' || echo 'buildId not found'
 
-echo "Redeploy complete. Hard refresh browser and retest sign-in."
+echo "Redeploy script completed successfully."

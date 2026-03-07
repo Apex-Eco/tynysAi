@@ -71,6 +71,46 @@ npm run seed
 
 ## Deployment Options
 
+### GitHub Actions Production Deploy (Approval Required)
+
+Production deploy runs from `.github/workflows/deploy.yml` on pushes to `main`, but the `production` environment must be approved in GitHub before the deploy job starts.
+
+Required GitHub secrets:
+
+```dotenv
+SSH_HOST=<server-host>
+SSH_USER=<server-user>
+SSH_KEY=<private-key>
+SSH_PORT=<optional, default is 22>
+POSTGRES_PASSWORD=<strong-password>
+NEXTAUTH_SECRET=<32+ chars>
+IOT_DEVICE_SECRET=<strong-secret>
+NEXTAUTH_URL=<https://your-domain>
+```
+
+Deploy behavior:
+
+- Lint/type-check and build run first.
+- Production deploy is paused until approval.
+- Remote deploy writes `.env`, rebuilds containers, runs migrations, and checks app health.
+- If migration or health check fails, workflow auto-rolls back to the previous commit.
+
+Monitor deployment:
+
+```bash
+gh run list --workflow deploy.yml --limit 5
+gh run watch <run-id>
+gh run view <run-id> --log
+```
+
+Server-side checks:
+
+```bash
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs --tail=80 app
+curl -i http://127.0.0.1:3010/
+```
+
 ### Option 1: Docker Compose (Recommended)
 
 The easiest way to deploy with Docker Compose, which handles both the app and database:

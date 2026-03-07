@@ -9,6 +9,11 @@ on:
 
 env:
   NODE_VERSION: "20"
+  APP_PORT: "3010"
+  CI_POSTGRES_PASSWORD: ci_local_password
+
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -27,9 +32,14 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
 
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run type-check
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run type-check
 
   # ── 2. Build ──────────────────────────────────
   build:
@@ -41,7 +51,7 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_USER: admin
-          POSTGRES_PASSWORD: password123
+          POSTGRES_PASSWORD: ${{ env.CI_POSTGRES_PASSWORD }}
           POSTGRES_DB: tynysdb
         ports:
           - 5433:5432
@@ -58,21 +68,22 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
 
-      - run: npm ci
+      - name: Install dependencies
+        run: npm ci
 
       - name: Push DB schema
         run: npx drizzle-kit push
         env:
-          DATABASE_URL: postgresql://admin:password123@localhost:5433/tynysdb
-          DB_URL: postgresql://admin:password123@localhost:5433/tynysdb
+          DATABASE_URL: postgresql://admin:${{ env.CI_POSTGRES_PASSWORD }}@localhost:5433/tynysdb
+          DB_URL: postgresql://admin:${{ env.CI_POSTGRES_PASSWORD }}@localhost:5433/tynysdb
 
       - name: Build Next.js
         run: npm run build
         env:
-          DATABASE_URL: postgresql://admin:password123@localhost:5433/tynysdb
-          DB_URL: postgresql://admin:password123@localhost:5433/tynysdb
+          DATABASE_URL: postgresql://admin:${{ env.CI_POSTGRES_PASSWORD }}@localhost:5433/tynysdb
+          DB_URL: postgresql://admin:${{ env.CI_POSTGRES_PASSWORD }}@localhost:5433/tynysdb
           NEXTAUTH_URL: http://localhost:3000
-          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          NEXTAUTH_SECRET: ci_nextauth_secret_for_build_only
 
   # ── 3. Docker build test (PRs only) ──────────
   docker-build-test:
@@ -102,29 +113,82 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment:
       name: production
+    env:
+      DEPLOY_SHA: ${{ github.sha }}
+      RELEASE_TAG: ${{ github.sha }}-${{ github.run_number }}
+      APP_PORT: ${{ env.APP_PORT }}
+      NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+      IOT_DEVICE_SECRET: ${{ secrets.IOT_DEVICE_SECRET }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      SSH_PORT: ${{ secrets.SSH_PORT }}
+      NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
     steps:
+      - name: Validate deploy secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          require_var() {
+            local name="$1"
+            local value="$2"
+            if [ -z "$value" ]; then
+              echo "::error::$name is required for production deploy"
+              exit 1
+            fi
+          }
+
+          require_var "SSH_HOST" "${{ secrets.SSH_HOST }}"
+          require_var "SSH_USER" "${{ secrets.SSH_USER }}"
+          require_var "SSH_KEY" "${{ secrets.SSH_KEY }}"
+          require_var "NEXTAUTH_SECRET" "$NEXTAUTH_SECRET"
+          require_var "IOT_DEVICE_SECRET" "$IOT_DEVICE_SECRET"
+          require_var "POSTGRES_PASSWORD" "$POSTGRES_PASSWORD"
+
+          if [ ${#NEXTAUTH_SECRET} -lt 32 ]; then
+            echo "::error::NEXTAUTH_SECRET must be at least 32 characters"
+            exit 1
+          fi
+
+          echo "Secrets validation passed"
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
-          port: 22
-          command_timeout: 10m
+          port: ${{ secrets.SSH_PORT || '22' }}
+          command_timeout: 20m
+          envs: DEPLOY_SHA,RELEASE_TAG,APP_PORT,NEXTAUTH_SECRET,IOT_DEVICE_SECRET,POSTGRES_PASSWORD,NEXTAUTH_URL
           script: |
-            set -e
+            set -euo pipefail
             cd /home/administrator/tynysAi
 
-            echo "==> Pulling latest code..."
+            PREV_COMMIT=$(git rev-parse HEAD)
+            TARGET_COMMIT="$DEPLOY_SHA"
+
+            rollback() {
+              echo "==> Rollback started to $PREV_COMMIT"
+              git reset --hard "$PREV_COMMIT"
+              docker compose -f docker-compose.prod.yml up -d --build --remove-orphans || true
+              docker compose -f docker-compose.prod.yml ps || true
+            }
+
+            echo "==> Pulling target commit..."
             git fetch origin
-            git reset --hard origin/main
+            git reset --hard "$TARGET_COMMIT"
 
             echo "==> Writing .env from GitHub secrets..."
             printf '%s\n' \
-              "POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password123}" \
-              "NEXTAUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}" \
-              "IOT_DEVICE_SECRET=${{ secrets.IOT_DEVICE_SECRET }}" \
-              "APP_PORT=${APP_PORT:-3010}" > .env
+              "NODE_ENV=production" \
+              "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" \
+              "NEXTAUTH_SECRET=$NEXTAUTH_SECRET" \
+              "IOT_DEVICE_SECRET=$IOT_DEVICE_SECRET" \
+              "APP_PORT=${APP_PORT:-3010}" \
+              "NEXTAUTH_URL=${NEXTAUTH_URL:-http://127.0.0.1:${APP_PORT:-3010}}" \
+              "RELEASE_TAG=$RELEASE_TAG" > .env
+
+            echo "==> Deploying release: $RELEASE_TAG"
 
             echo "==> Building Docker image..."
             BUILD_OK=0
@@ -139,6 +203,7 @@ jobs:
 
             if [ "$BUILD_OK" -ne 1 ]; then
               echo "Docker build failed after 3 attempts"
+              rollback
               exit 1
             fi
 
@@ -147,7 +212,7 @@ jobs:
 
             echo "==> Ensuring Postgres 'admin' password matches .env (idempotent)"
             for i in 1 2 3; do
-              if docker compose -f docker-compose.prod.yml exec -T postgres psql -U postgres -c "ALTER USER admin WITH PASSWORD '${POSTGRES_PASSWORD:-password123}';"; then
+              if docker compose -f docker-compose.prod.yml exec -T postgres psql -U postgres -c "ALTER USER admin WITH PASSWORD '$POSTGRES_PASSWORD';"; then
                 echo "Postgres admin password ensured"
                 break
               fi
@@ -156,25 +221,30 @@ jobs:
             done
 
             echo "==> Running migrations..."
-            docker compose -f docker-compose.prod.yml exec -T app npm run migrate || true
+            if ! docker compose -f docker-compose.prod.yml exec -T app npm run migrate; then
+              echo "Migration failed"
+              rollback
+              exit 1
+            fi
 
-            echo "==> Seeding production data..."
-            docker compose -f docker-compose.prod.yml exec -T app npm run seed || true
+            echo "==> Skipping seed in automatic deploy (run manually when needed)"
 
             echo "==> Health check (up to 120 seconds)..."
             for i in $(seq 1 24); do
-              STATUS=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3010/ || true)
+              STATUS=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${APP_PORT:-3010}/" || true)
               [ -z "$STATUS" ] && STATUS="000"
               if [ "$STATUS" = "200" ] || [ "$STATUS" = "307" ]; then
                 echo "Deploy successful! HTTP $STATUS"
+                docker compose -f docker-compose.prod.yml ps
                 exit 0
               fi
-              echo "Attempt $i/24 — HTTP $STATUS, waiting 5s..."
+              echo "Attempt $i/24 - HTTP $STATUS, waiting 5s..."
               sleep 5
             done
 
-            echo "Health check failed. Dumping logs:"
-            docker compose -f docker-compose.prod.yml logs --tail=50
+            echo "Health check failed. Dumping logs and rolling back..."
+            docker compose -f docker-compose.prod.yml logs --tail=80 || true
+            rollback
             exit 1
 
       - name: Clean up old Docker images
