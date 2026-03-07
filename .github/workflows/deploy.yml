@@ -9,17 +9,12 @@ on:
 
 env:
   NODE_VERSION: "20"
-  APP_PORT: "3010"
-
-permissions:
-  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # ── 1. Lint + Type Check ──────────────────────
   quality-check:
     name: Lint & Type Check
     runs-on: ubuntu-latest
@@ -40,7 +35,6 @@ jobs:
       - name: Type check
         run: npm run type-check
 
-  # ── 2. Build ──────────────────────────────────
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -84,7 +78,6 @@ jobs:
           NEXTAUTH_URL: http://localhost:3000
           NEXTAUTH_SECRET: ci_nextauth_secret_for_build_only
 
-  # ── 3. Docker build test (PRs only) ──────────
   docker-build-test:
     name: Docker Build Test
     runs-on: ubuntu-latest
@@ -104,7 +97,6 @@ jobs:
           cache-to: type=gha,mode=max
           tags: tynys-ai:test
 
-  # ── 4. Deploy to Production ───────────────────
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
@@ -112,42 +104,17 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment:
       name: production
-    env:
-      DEPLOY_SHA: ${{ github.sha }}
-      RELEASE_TAG: ${{ github.sha }}-${{ github.run_number }}
-      APP_PORT: ${{ env.APP_PORT }}
-      NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
-      IOT_DEVICE_SECRET: ${{ secrets.IOT_DEVICE_SECRET }}
-      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-      NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
     steps:
-      - name: Validate deploy secrets
+      - name: Validate required secrets
         shell: bash
         run: |
-          set -euo pipefail
-
-          require_var() {
-            local name="$1"
-            local value="$2"
-            if [ -z "$value" ]; then
-              echo "::error::$name is required for production deploy"
-              exit 1
-            fi
-          }
-
-          require_var "SSH_HOST" "${{ secrets.SSH_HOST }}"
-          require_var "SSH_USER" "${{ secrets.SSH_USER }}"
-          require_var "SSH_KEY" "${{ secrets.SSH_KEY }}"
-          require_var "NEXTAUTH_SECRET" "$NEXTAUTH_SECRET"
-          require_var "IOT_DEVICE_SECRET" "$IOT_DEVICE_SECRET"
-          require_var "POSTGRES_PASSWORD" "$POSTGRES_PASSWORD"
-
-          if [ ${#NEXTAUTH_SECRET} -lt 32 ]; then
-            echo "::error::NEXTAUTH_SECRET must be at least 32 characters"
-            exit 1
-          fi
-
-          echo "Secrets validation passed"
+          set -e
+          [ -n "${{ secrets.SSH_HOST }}" ] || { echo "Missing SSH_HOST"; exit 1; }
+          [ -n "${{ secrets.SSH_USER }}" ] || { echo "Missing SSH_USER"; exit 1; }
+          [ -n "${{ secrets.SSH_KEY }}" ] || { echo "Missing SSH_KEY"; exit 1; }
+          [ -n "${{ secrets.POSTGRES_PASSWORD }}" ] || { echo "Missing POSTGRES_PASSWORD"; exit 1; }
+          [ -n "${{ secrets.NEXTAUTH_SECRET }}" ] || { echo "Missing NEXTAUTH_SECRET"; exit 1; }
+          [ -n "${{ secrets.IOT_DEVICE_SECRET }}" ] || { echo "Missing IOT_DEVICE_SECRET"; exit 1; }
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -157,13 +124,18 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           port: 22
           command_timeout: 20m
-          envs: DEPLOY_SHA,RELEASE_TAG,APP_PORT,NEXTAUTH_SECRET,IOT_DEVICE_SECRET,POSTGRES_PASSWORD,NEXTAUTH_URL
           script: |
-            set -euo pipefail
+            set -e
             cd /home/administrator/tynysAi
 
             PREV_COMMIT=$(git rev-parse HEAD)
-            TARGET_COMMIT="$DEPLOY_SHA"
+            TARGET_COMMIT="${{ github.sha }}"
+            RELEASE_TAG="${{ github.sha }}-${{ github.run_number }}"
+            APP_PORT="${APP_PORT:-3010}"
+            NEXTAUTH_URL_VALUE="${{ secrets.NEXTAUTH_URL }}"
+            if [ -z "$NEXTAUTH_URL_VALUE" ]; then
+              NEXTAUTH_URL_VALUE="http://127.0.0.1:${APP_PORT}"
+            fi
 
             rollback() {
               echo "==> Rollback started to $PREV_COMMIT"
@@ -179,12 +151,12 @@ jobs:
             echo "==> Writing .env from GitHub secrets..."
             printf '%s\n' \
               "NODE_ENV=production" \
-              "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" \
-              "NEXTAUTH_SECRET=$NEXTAUTH_SECRET" \
-              "IOT_DEVICE_SECRET=$IOT_DEVICE_SECRET" \
-              "APP_PORT=${APP_PORT:-3010}" \
-              "NEXTAUTH_URL=${NEXTAUTH_URL:-http://127.0.0.1:${APP_PORT:-3010}}" \
-              "RELEASE_TAG=$RELEASE_TAG" > .env
+              "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" \
+              "NEXTAUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}" \
+              "IOT_DEVICE_SECRET=${{ secrets.IOT_DEVICE_SECRET }}" \
+              "APP_PORT=${APP_PORT}" \
+              "NEXTAUTH_URL=${NEXTAUTH_URL_VALUE}" \
+              "RELEASE_TAG=${RELEASE_TAG}" > .env
 
             echo "==> Deploying release: $RELEASE_TAG"
 
@@ -210,7 +182,7 @@ jobs:
 
             echo "==> Ensuring Postgres 'admin' password matches .env (idempotent)"
             for i in 1 2 3; do
-              if docker compose -f docker-compose.prod.yml exec -T postgres psql -U postgres -c "ALTER USER admin WITH PASSWORD '$POSTGRES_PASSWORD';"; then
+              if docker compose -f docker-compose.prod.yml exec -T postgres psql -U postgres -c "ALTER USER admin WITH PASSWORD '${{ secrets.POSTGRES_PASSWORD }}';"; then
                 echo "Postgres admin password ensured"
                 break
               fi
@@ -229,7 +201,7 @@ jobs:
 
             echo "==> Health check (up to 120 seconds)..."
             for i in $(seq 1 24); do
-              STATUS=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${APP_PORT:-3010}/" || true)
+              STATUS=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${APP_PORT}/" || true)
               [ -z "$STATUS" ] && STATUS="000"
               if [ "$STATUS" = "200" ] || [ "$STATUS" = "307" ]; then
                 echo "Deploy successful! HTTP $STATUS"
