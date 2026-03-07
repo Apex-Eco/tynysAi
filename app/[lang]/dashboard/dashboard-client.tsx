@@ -39,12 +39,13 @@ import {
 import { PolarAngleAxis, RadialBar, RadialBarChart, ResponsiveContainer } from "recharts";
 
 export type SensorReading = {
+  id?: number | string;
   timestamp: string;
   sensorId: string;
   value: number;
   location: string | null;
   transportType: string | null;
-  ingestedAt: Date | string;
+  ingestedAt?: Date | string;
 };
 
 interface DashboardCopy {
@@ -484,7 +485,7 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
 
   const activityFeed = useMemo(() => {
     return filteredReadings.slice(0, 10).map((reading) => ({
-      id: reading.id,
+      id: reading.id ?? `${reading.sensorId}-${String(reading.ingestedAt ?? reading.timestamp)}`,
       sensorId: reading.sensorId,
       timestamp: reading.ingestedAt ?? reading.timestamp,
     }));

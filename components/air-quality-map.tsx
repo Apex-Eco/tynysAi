@@ -752,7 +752,7 @@ export function AirQualityMap({
 
             {useUserLocation && userLocation ? (
               <>
-                <Marker center={userLocation} position={userLocation} icon={USER_LOCATION_ICON}>
+                <Marker position={userLocation} icon={USER_LOCATION_ICON}>
                   <Popup>{text.userLocation}</Popup>
                 </Marker>
               </>

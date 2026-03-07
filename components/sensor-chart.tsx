@@ -15,13 +15,13 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface SensorReading {
-  id: number;
+  id?: number | string;
   timestamp: string;
   sensorId: string;
   value: number;
   location: string | null;
   transportType: string | null;
-  ingestedAt: string | Date;
+  ingestedAt?: string | Date;
 }
 
 interface SensorChartProps {
