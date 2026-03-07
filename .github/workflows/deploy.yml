@@ -120,7 +120,6 @@ jobs:
       NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
       IOT_DEVICE_SECRET: ${{ secrets.IOT_DEVICE_SECRET }}
       POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-      SSH_PORT: ${{ secrets.SSH_PORT }}
       NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
     steps:
       - name: Validate deploy secrets
@@ -157,7 +156,7 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT || '22' }}
+          port: 22
           command_timeout: 20m
           envs: DEPLOY_SHA,RELEASE_TAG,APP_PORT,NEXTAUTH_SECRET,IOT_DEVICE_SECRET,POSTGRES_PASSWORD,NEXTAUTH_URL
           script: |
