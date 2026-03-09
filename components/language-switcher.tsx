@@ -28,6 +28,7 @@ export function LanguageSwitcher({ iconOnly = false }: { iconOnly?: boolean }) {
   const router = useRouter();
 
   const currentLocale = getLocaleFromPathname(pathname);
+  const englishActiveClass = "data-[state=checked]:bg-slate-950 data-[state=checked]:text-white data-[state=checked]:border data-[state=checked]:border-blue-900";
 
   const switchLocale = (newLocale: string) => {
     if (!pathname) return;
@@ -72,7 +73,7 @@ export function LanguageSwitcher({ iconOnly = false }: { iconOnly?: boolean }) {
         </SelectTrigger>
         <SelectContent className="z-50">
           {i18n.locales.map((locale) => (
-            <SelectItem key={locale} value={locale}>
+            <SelectItem key={locale} value={locale} className={locale === "en" ? englishActiveClass : undefined}>
               {languageNames[locale]}
             </SelectItem>
           ))}
@@ -87,6 +88,7 @@ export function LanguageSwitcherCompact({ minimal = false }: { minimal?: boolean
   const pathname = usePathname();
   const router = useRouter();
   const currentLocale = getLocaleFromPathname(pathname);
+  const isEnglish = currentLocale === "en";
 
   const getNextLocale = () => {
     const currentIndex = i18n.locales.indexOf(currentLocale);
@@ -111,9 +113,11 @@ export function LanguageSwitcherCompact({ minimal = false }: { minimal?: boolean
       size="sm"
       onClick={switchToNextLocale}
       className={
-        minimal
-          ? "h-10 rounded-full border border-cyan-400/60 bg-cyan-500/15 px-3 text-cyan-100 hover:border-cyan-300 hover:bg-cyan-500/25"
-          : "h-10 rounded-full border border-cyan-500/50 bg-cyan-600/15 px-3 text-cyan-100 hover:border-cyan-400 hover:bg-cyan-600/25"
+        isEnglish
+          ? "h-10 rounded-full border border-blue-900 bg-slate-950 px-3 text-white hover:bg-slate-900"
+          : minimal
+            ? "h-10 rounded-full border border-cyan-400/60 bg-cyan-500/15 px-3 text-cyan-100 hover:border-cyan-300 hover:bg-cyan-500/25"
+            : "h-10 rounded-full border border-cyan-500/50 bg-cyan-600/15 px-3 text-cyan-100 hover:border-cyan-400 hover:bg-cyan-600/25"
       }
     >
       <Globe className="h-4 w-4" />

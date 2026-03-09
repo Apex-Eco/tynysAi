@@ -7,10 +7,9 @@ import L from "leaflet";
 import { usePathname } from "next/navigation";
 import "leaflet/dist/leaflet.css";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DeviceDetailModal, type DeviceDetails } from "@/components/device-detail-modal";
 import { LanguageSwitcherCompact } from "@/components/language-switcher";
+import type { RouteGeometryResponse, RouteStep } from "@/types/route";
 
 export type MapReading = {
   location?: string | null;
@@ -56,6 +55,10 @@ const MAP_TEXT: Record<
     routing: string;
     routeUnavailable: string;
     routeDistance: string;
+    routeEta: string;
+    routeGuidance: string;
+    routeNoGuidance: string;
+    metersAway: string;
     destination: string;
     enableLocation: string;
     kmAway: string;
@@ -77,6 +80,10 @@ const MAP_TEXT: Record<
     routing: "Routing to selected destination...",
     routeUnavailable: "Route unavailable right now",
     routeDistance: "Route distance",
+    routeEta: "ETA",
+    routeGuidance: "Route guidance",
+    routeNoGuidance: "No detailed turn guidance available",
+    metersAway: "m",
     destination: "Selected destination",
     enableLocation: "Enable location to view nearest AQI",
     kmAway: "km away",
@@ -97,6 +104,10 @@ const MAP_TEXT: Record<
     routing: "Строим маршрут к выбранной точке...",
     routeUnavailable: "Маршрут сейчас недоступен",
     routeDistance: "Длина маршрута",
+    routeEta: "Время",
+    routeGuidance: "Подсказки маршрута",
+    routeNoGuidance: "Подробные подсказки недоступны",
+    metersAway: "м",
     destination: "Выбранная точка",
     enableLocation: "Включите геолокацию для отображения ближайшего AQI",
     kmAway: "км",
@@ -117,12 +128,70 @@ const MAP_TEXT: Record<
     routing: "Таңдалған нүктеге маршрут құрылуда...",
     routeUnavailable: "Маршрут қазір қолжетімсіз",
     routeDistance: "Маршрут қашықтығы",
+    routeEta: "Уақыты",
+    routeGuidance: "Маршрут нусқаулары",
+    routeNoGuidance: "Толық бұрылыс нусқаулары жок",
+    metersAway: "м",
     destination: "Таңдалған нүкте",
     enableLocation: "Жақын AQI көру үшін геолокацияны қосыңыз",
     kmAway: "км",
     userLocation: "Сіздің орныңыз",
   },
 };
+
+type GuidanceArrowKind = "straight" | "left" | "right" | "slight-left" | "slight-right" | "uturn-left" | "uturn-right";
+const TURN_ARROW_THRESHOLD_METERS = 20;
+
+function normalizeManeuver(value?: string) {
+  return value?.toLowerCase().trim() ?? "";
+}
+
+function getArrowKind(step?: RouteStep | null): GuidanceArrowKind {
+  if (!step) return "straight";
+  const type = normalizeManeuver(step.maneuverType);
+  const modifier = normalizeManeuver(step.maneuverModifier);
+
+  if (type.includes("uturn") || modifier.includes("uturn")) {
+    if (modifier.includes("right")) return "uturn-right";
+    return "uturn-left";
+  }
+
+  if (modifier.includes("slight right") || modifier.includes("sharp right") || modifier === "right") {
+    return modifier.includes("slight") ? "slight-right" : "right";
+  }
+  if (modifier.includes("slight left") || modifier.includes("sharp left") || modifier === "left") {
+    return modifier.includes("slight") ? "slight-left" : "left";
+  }
+
+  if (type.includes("turn") || type.includes("fork") || type.includes("merge") || type.includes("ramp")) {
+    if (type.includes("right")) return "right";
+    if (type.includes("left")) return "left";
+  }
+
+  return "straight";
+}
+
+function isTurnArrow(kind: GuidanceArrowKind) {
+  return kind !== "straight";
+}
+
+function GuidanceArrow({ kind, className }: { kind: GuidanceArrowKind; className?: string }) {
+  const pathByKind: Record<GuidanceArrowKind, string> = {
+    straight: "M12 21V6 M12 6 L7.5 10.5 M12 6 L16.5 10.5",
+    right: "M6 21V7 H16 M16 7 L11.5 2.5 M16 7 L11.5 11.5",
+    left: "M18 21V7 H8 M8 7 L12.5 2.5 M8 7 L12.5 11.5",
+    "slight-right": "M8 20 L16 12 M16 12 V6 M16 12 H10",
+    "slight-left": "M16 20 L8 12 M8 12 V6 M8 12 H14",
+    "uturn-left": "M16 21V9 A4 4 0 0 0 12 5 H7 M7 5 L11 1.5 M7 5 L11 8.5",
+    "uturn-right": "M8 21V9 A4 4 0 0 1 12 5 H17 M17 5 L13 1.5 M17 5 L13 8.5",
+  };
+
+  return (
+    <svg viewBox="0 0 24 24" className={cn("h-8 w-8 text-slate-100", className)} fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d={pathByKind[kind]} />
+    </svg>
+  );
+}
 
 function toRadians(value: number) {
   return (value * Math.PI) / 180;
@@ -374,6 +443,7 @@ export function AirQualityMap({
   const [isLocating, setIsLocating] = useState(false);
   const [routeGeometry, setRouteGeometry] = useState<LatLngTuple[] | null>(null);
   const [routeDistanceKm, setRouteDistanceKm] = useState<number | null>(null);
+  const [routeSteps, setRouteSteps] = useState<RouteStep[]>([]);
   const [isRouting, setIsRouting] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
   const [selectedDevice, setSelectedDevice] = useState<DeviceDetails | null>(null);
@@ -432,6 +502,7 @@ export function AirQualityMap({
       });
       setRouteGeometry(null);
       setRouteDistanceKm(null);
+      setRouteSteps([]);
       setIsRouting(false);
       setRouteError(null);
       routeRequestMetaRef.current = {
@@ -503,10 +574,7 @@ export function AirQualityMap({
           console.error("[RouteDebug] routeFetch:api-error", { error: errorPayload?.error ?? "unknown" });
           throw new Error(errorPayload?.error || "route-fetch-failed");
         }
-        const payload = (await response.json()) as {
-          geometry: [number, number][];
-          distanceMeters: number;
-        };
+        const payload = (await response.json()) as RouteGeometryResponse;
 
         console.info("[RouteDebug] routeFetch:payload", {
           geometryPoints: payload.geometry?.length ?? 0,
@@ -519,6 +587,7 @@ export function AirQualityMap({
 
         setRouteGeometry(payload.geometry.map((coords) => [coords[0], coords[1]]));
         setRouteDistanceKm(payload.distanceMeters / 1000);
+        setRouteSteps(payload.steps ?? []);
         setRouteError(null);
         console.info("[RouteDebug] routeFetch:draw-success");
       })
@@ -529,6 +598,7 @@ export function AirQualityMap({
         // Fallback: still draw a direct line so the user can navigate visually when routing provider fails.
         setRouteGeometry([userLocation, routeDestination]);
         setRouteDistanceKm(haversineDistanceKm(userLocation, routeDestination));
+        setRouteSteps([]);
         setRouteError(text.routeUnavailable);
         console.error("[RouteDebug] routeFetch:failed-using-fallback", {
           message: error instanceof Error ? error.message : String(error),
@@ -587,11 +657,35 @@ export function AirQualityMap({
         ? routeError
         : routeDestination && isRouting
           ? text.routing
-          : routeDestination && routeDistanceKm !== null
-            ? `${text.routeDistance}: ${routeDistanceKm.toFixed(1)} ${text.kmAway}`
       : nearestAqi
         ? `${Math.round(nearestAqi.value)} · ${nearestAqi.label} · ${nearestAqi.distanceKm.toFixed(1)} ${text.kmAway}`
         : "-";
+
+  const nextRouteStep = useMemo(() => {
+    if (routeSteps.length === 0) return null;
+    return routeSteps.find((step) => step.distanceMeters > 0 && normalizeManeuver(step.maneuverType) !== "arrive") ?? routeSteps[0];
+  }, [routeSteps]);
+
+  const nextStepDistanceMeters = useMemo(() => {
+    if (nextRouteStep && Number.isFinite(nextRouteStep.distanceMeters)) {
+      return Math.max(0, nextRouteStep.distanceMeters);
+    }
+    if (routeDistanceKm !== null && Number.isFinite(routeDistanceKm)) {
+      return Math.max(0, routeDistanceKm * 1000);
+    }
+    return null;
+  }, [nextRouteStep, routeDistanceKm]);
+
+  const nextArrowKind = useMemo(() => getArrowKind(nextRouteStep), [nextRouteStep]);
+  const showTurnArrow = Boolean(nextStepDistanceMeters !== null && nextStepDistanceMeters <= TURN_ARROW_THRESHOLD_METERS && isTurnArrow(nextArrowKind));
+  const activeGuidanceArrow: GuidanceArrowKind = showTurnArrow ? nextArrowKind : "straight";
+  const stepDistanceLabel = `${Math.max(0, Math.round(nextStepDistanceMeters ?? 0))} ${text.metersAway}`;
+  const showNearbyStatusCard = showUserStatus && !showUserStatusAsPopover;
+  const stackTopClass = showLanguageToggle
+    ? "top-20"
+    : showUserStatusAsPopover
+      ? "top-[calc(env(safe-area-inset-top)+3.5rem)]"
+      : "top-3";
 
   if (points.length === 0) {
     return (
@@ -621,36 +715,9 @@ export function AirQualityMap({
           </div>
         ) : null}
 
-        {showUserStatus ? (
-          showUserStatusAsPopover ? (
-            <div className="absolute right-3 top-16 z-[500]">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    className="h-9 rounded-full border border-slate-700 bg-slate-900 px-3 text-slate-100 shadow-lg hover:bg-slate-800"
-                  >
-                    <span className="mr-2 relative flex h-2.5 w-2.5">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/70" />
-                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                    </span>
-                    {text.nearbyAqi}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="end" side="bottom" className="w-72 border-slate-700 bg-slate-950 text-slate-100">
-                  <p className="text-[10px] uppercase tracking-[0.12em] text-slate-400">{text.nearbyAqi}</p>
-                  <p
-                    className={cn("mt-1 text-xs", useUserLocation && nearestAqi ? "font-semibold" : "text-slate-300")}
-                    style={useUserLocation && nearestAqi ? { color: nearestAqi.color } : undefined}
-                  >
-                    {statusValueText}
-                  </p>
-                </PopoverContent>
-              </Popover>
-            </div>
-          ) : (
-            <div className={cn("absolute right-3 z-[500]", showLanguageToggle ? "top-20" : "top-3")}>
+        {(showNearbyStatusCard || (routeDestination && routeGeometry && routeGeometry.length > 1)) ? (
+          <div className={cn("absolute right-3 z-[500] flex flex-col items-end gap-2", stackTopClass)}>
+            {showNearbyStatusCard ? (
               <div className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 shadow-lg">
                 <p className="text-[10px] uppercase tracking-[0.12em] text-slate-400">{text.nearbyAqi}</p>
                 <p
@@ -660,8 +727,17 @@ export function AirQualityMap({
                   {statusValueText}
                 </p>
               </div>
-            </div>
-          )
+            ) : null}
+
+            {routeDestination && routeGeometry && routeGeometry.length > 1 ? (
+              <div className="pointer-events-none flex flex-col items-center rounded-xl border border-slate-700/90 bg-slate-950/95 px-2 py-2 shadow-xl backdrop-blur">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-600 bg-slate-900">
+                  <GuidanceArrow kind={activeGuidanceArrow} className="h-5 w-5" />
+                </div>
+                <p className="mt-1 text-[11px] font-semibold tabular-nums text-slate-100">{stepDistanceLabel}</p>
+              </div>
+            ) : null}
+          </div>
         ) : null}
 
         <div className="relative flex-1 overflow-hidden rounded-lg">
@@ -693,7 +769,7 @@ export function AirQualityMap({
             {routeGeometry && routeGeometry.length > 1 ? (
               <Polyline
                 positions={routeGeometry}
-                pathOptions={{ color: "#22c55e", weight: 4, opacity: 0.9 }}
+                pathOptions={{ color: "#2563eb", weight: 7, opacity: 0.95 }}
               />
             ) : null}
 
@@ -701,7 +777,7 @@ export function AirQualityMap({
               <CircleMarker
                 center={routeDestination}
                 radius={7}
-                pathOptions={{ color: "#22c55e", fillColor: "#22c55e", fillOpacity: 0.95, weight: 2 }}
+                pathOptions={{ color: "#2563eb", fillColor: "#2563eb", fillOpacity: 0.95, weight: 2 }}
               >
                 <Popup>{text.destination}</Popup>
               </CircleMarker>

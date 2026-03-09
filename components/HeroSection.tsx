@@ -46,7 +46,7 @@ export function HeroSection({ session, mapReadings, dict }: HeroSectionProps) {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.45 }}
-            className="inline-flex items-center gap-2 rounded-full border border-cyan-300/25 bg-cyan-500/10 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-200"
+            className="hidden items-center gap-2 rounded-full border border-cyan-300/25 bg-cyan-500/10 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-200 sm:inline-flex"
           >
             <span className="h-1.5 w-1.5 rounded-full bg-cyan-300" />
             {dict.hero.badge}

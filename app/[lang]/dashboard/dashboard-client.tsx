@@ -6,9 +6,7 @@ import { usePathname } from "next/navigation";
 import { DashboardMapPanel } from "./map-panel-client";
 import { NearbyDevicesPanel } from "@/components/nearby-devices-panel";
 import { LanguageSwitcherCompact } from "@/components/language-switcher";
-import { CompactActivityFeed } from "@/components/compact-activity-feed";
 import { SensorChart } from "@/components/sensor-chart";
-import { SensorDistribution, type SensorSlice } from "@/components/sensor-distribution";
 import { fetchNearbyDevices, type NearbyDevice } from "@/lib/device-api";
 import { exportSensorReportPdf } from "@/lib/utils/export-pdf";
 import type { GoodAirOption, NearestGoodAirResponse } from "@/types/route";
@@ -32,7 +30,6 @@ import {
   Radio,
   Search,
   TrendingUp,
-  House,
   Route,
   type LucideIcon,
 } from "lucide-react";
@@ -87,7 +84,7 @@ type SectionHeaderProps = {
 };
 
 type DashboardLocale = "en" | "ru" | "kz";
-type SidebarAction = "search" | "home" | "location" | "route" | "trends";
+type SidebarAction = "search" | "location" | "route" | "trends";
 
 const MOBILE_LOCATION_PREF_KEY = "dashboard.mobile.location.enabled";
 const DESKTOP_LOCATION_PREF_KEY = "dashboard.desktop.location.enabled";
@@ -125,11 +122,12 @@ const DASHBOARD_UI_TEXT: Record<
     airCompositionAnalysis: string;
     average: string;
     search: string;
-    home: string;
     locate: string;
     locating: string;
     route: string;
     close: string;
+    nearbyAqi: string;
+    unavailable: string;
     routeComingSoon: string;
     routeLoading: string;
     routeNoOptions: string;
@@ -171,11 +169,12 @@ const DASHBOARD_UI_TEXT: Record<
     airCompositionAnalysis: "Air Composition Analysis",
     average: "Average",
     search: "Search",
-    home: "Home",
     locate: "Location",
     locating: "Locating...",
     route: "Route",
     close: "Close",
+    nearbyAqi: "Nearby AQI",
+    unavailable: "Unavailable",
     routeComingSoon: "Route to nearest clean-air zone is coming next.",
     routeLoading: "Loading nearby clean-air options...",
     routeNoOptions: "No nearby clean-air options found right now.",
@@ -216,11 +215,12 @@ const DASHBOARD_UI_TEXT: Record<
     airCompositionAnalysis: "Анализ состава воздуха",
     average: "Среднее",
     search: "Поиск",
-    home: "Главная",
     locate: "Локация",
     locating: "Определяем...",
     route: "Маршрут",
     close: "Закрыть",
+    nearbyAqi: "AQI рядом",
+    unavailable: "Недоступно",
     routeComingSoon: "Маршрут до ближайшей зоны с чистым воздухом будет добавлен следующим шагом.",
     routeLoading: "Загружаем ближайшие точки с чистым воздухом...",
     routeNoOptions: "Сейчас рядом нет точек с хорошим AQI.",
@@ -261,11 +261,12 @@ const DASHBOARD_UI_TEXT: Record<
     airCompositionAnalysis: "Ауа құрамын талдау",
     average: "Орташа",
     search: "Іздеу",
-    home: "Басты",
     locate: "Орналасу",
     locating: "Анықталуда...",
     route: "Бағыт",
     close: "Жабу",
+    nearbyAqi: "Жақын AQI",
+    unavailable: "Қолжетімсіз",
     routeComingSoon: "Ең жақын таза ауа аймағына бағыттау келесі қадамда қосылады.",
     routeLoading: "Жақын таза ауа нүктелері жүктелуде...",
     routeNoOptions: "Қазір жақын маңда таза ауа нүктелері табылмады.",
@@ -357,10 +358,10 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
   const [activeRouteDestination, setActiveRouteDestination] = useState<[number, number] | null>(null);
   const [activeRouteOptionId, setActiveRouteOptionId] = useState<string | null>(null);
   const [isExportingReport, setIsExportingReport] = useState(false);
-  const [mobileMapKey, setMobileMapKey] = useState(0);
+  const mobileMapKey = 0;
   const [isMobileLocationActive, setIsMobileLocationActive] = useState(false);
   const [isMobileLocationPending, setIsMobileLocationPending] = useState(false);
-  const [desktopMapKey, setDesktopMapKey] = useState(0);
+  const desktopMapKey = 0;
   const [isDesktopLocationActive, setIsDesktopLocationActive] = useState(false);
   const [desktopRecenterRequestId, setDesktopRecenterRequestId] = useState(0);
   const [mobileRecenterRequestId, setMobileRecenterRequestId] = useState(0);
@@ -467,30 +468,6 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
     [dict, statValues]
   );
 
-  const sensorSlices: SensorSlice[] = useMemo(() => {
-    const counts = filteredReadings.reduce((acc, reading) => {
-      acc[reading.sensorId] = (acc[reading.sensorId] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-
-    return Object.entries(counts)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 6)
-      .map(([sensorId, count]) => ({
-        sensorId,
-        count,
-        percentage: Math.round((count / Math.max(filteredReadings.length, 1)) * 100),
-      }));
-  }, [filteredReadings]);
-
-  const activityFeed = useMemo(() => {
-    return filteredReadings.slice(0, 10).map((reading) => ({
-      id: reading.id ?? `${reading.sensorId}-${String(reading.ingestedAt ?? reading.timestamp)}`,
-      sensorId: reading.sensorId,
-      timestamp: reading.ingestedAt ?? reading.timestamp,
-    }));
-  }, [filteredReadings]);
-
   const getUserInitials = (name?: string | null) => {
     if (!name) return "U";
     return name
@@ -566,13 +543,6 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    if (isMobileDevice) {
-      setNearbyDevices([]);
-      setIsNearbyLoading(false);
-      setHasNearbyError(false);
-      return;
-    }
-
     if (!("geolocation" in navigator)) {
       setHasNearbyError(true);
       return;
@@ -624,13 +594,6 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
 
   const handleMobileSearchOpen = () => {
     setIsMobileSearchDialogOpen(true);
-  };
-
-  const handleMobileHome = () => {
-    setMobileMapKey((current) => current + 1);
-    setIsMobileLocationActive(false);
-    setIsMobileLocationPending(false);
-    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleMobileLocationToggle = () => {
@@ -756,12 +719,6 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
     setIsRouteDialogOpen(false);
   }, [isMobileDevice]);
 
-  const handleDesktopHome = useCallback(() => {
-    setDesktopMapKey((current) => current + 1);
-    setIsDesktopLocationActive(false);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }, []);
-
   const handleDesktopRecenter = useCallback(() => {
     if (typeof window === "undefined" || !("geolocation" in navigator)) {
       setIsDesktopLocationActive(false);
@@ -814,10 +771,6 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
       const action = customEvent.detail?.action;
       if (!action) return;
 
-      if (action === "home") {
-        handleDesktopHome();
-        return;
-      }
       if (action === "location") {
         handleDesktopRecenter();
         return;
@@ -843,7 +796,15 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
       window.removeEventListener("dashboard:action", onAction as EventListener);
       window.removeEventListener("dashboard:search", onSearch as EventListener);
     };
-  }, [handleDesktopHome, handleDesktopRecenter, handleRouteAction]);
+  }, [handleDesktopRecenter, handleRouteAction]);
+
+  const mobileNearbyPlaceText = useMemo(() => {
+    if (isNearbyLoading) return ui.locating;
+    if (hasNearbyError) return ui.unavailable;
+    if (!nearbyDevices.length) return ui.unavailable;
+    const nearest = nearbyDevices[0];
+    return `${nearest.name} · ${nearest.distanceKm.toFixed(1)} ${nearbyText.kmAway}`;
+  }, [hasNearbyError, isNearbyLoading, nearbyDevices, nearbyText.kmAway, ui.locating, ui.unavailable]);
 
   const statNumbers = useMemo(() => {
     const values = filteredReadings.map((r) => r.value);
@@ -1055,19 +1016,6 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
             )}
           </CardContent>
         </Card>
-
-        <Card className="border-0 shadow-lg">
-          <CardHeader>
-            <CardTitle>{dict.sensorDataDistribution}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <SensorDistribution
-              data={sensorSlices}
-              total={filteredReadings.length}
-              emptyText={dict.noSensorData}
-            />
-          </CardContent>
-        </Card>
       </div>
     </div>
   );
@@ -1132,7 +1080,7 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
           key={`mobile-map-${mobileMapKey}`}
           readings={filteredReadings}
           emptyMapText={dict.noGeocodedData}
-          recentActivity={activityFeed}
+          recentActivity={[]}
           feedTitle={dict.recentIotData}
           feedEmptyText={dict.noRecentActivity}
           mapHeightClass="h-[100dvh]"
@@ -1153,7 +1101,7 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
         <div className="pointer-events-none fixed inset-0 z-20 bg-slate-950/10" />
 
         {session?.user ? (
-          <div className="fixed right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-40 flex items-center">
+          <div className="fixed right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-[700] flex items-center">
             <Popover open={isMobileAccountOpen} onOpenChange={setIsMobileAccountOpen}>
               <PopoverTrigger asChild>
                 <button
@@ -1210,7 +1158,7 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
 
         <div className="fixed inset-x-0 bottom-0 z-40 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">
           <div className="rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl">
-            <div className="flex w-full items-center justify-between px-2 py-3 sm:px-3">
+            <div className="flex w-full items-center justify-between gap-2 px-2 py-3 sm:px-3">
               <Button
                 size="sm"
                 variant="outline"
@@ -1221,16 +1169,14 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
               >
                 <Search className="h-4 w-4" />
               </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-11 w-11 border-slate-700 bg-slate-900 px-0 text-slate-100 hover:bg-slate-800"
-                onClick={handleMobileHome}
-                aria-label={ui.home}
-                title={ui.home}
+              <div
+                className="h-11 min-w-[7.5rem] max-w-[8.25rem] rounded-xl border border-slate-700 bg-slate-900 px-2 py-1"
+                aria-label={ui.nearbyAqi}
+                title={mobileNearbyPlaceText}
               >
-                <House className="h-4 w-4" />
-              </Button>
+                <p className="text-[10px] uppercase tracking-[0.08em] text-slate-400">{ui.nearbyAqi}</p>
+                <p className="truncate text-[11px] font-semibold text-slate-100">{mobileNearbyPlaceText}</p>
+              </div>
               <Button
                 size="sm"
                 className={cn(
@@ -1263,11 +1209,12 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
               <Button
                 size="sm"
                 className="h-11 w-11 bg-blue-600 px-0 text-white hover:bg-blue-500"
-                onClick={() => setIsAnalyticsDialogOpen(true)}
-                aria-label={ui.historicalTrends}
-                title={ui.historicalTrends}
+                onClick={handleDesktopExportReport}
+                disabled={filteredReadings.length === 0 || isExportingReport}
+                aria-label={ui.exportPdf}
+                title={ui.exportPdf}
               >
-                <TrendingUp className="h-4 w-4" />
+                <Download className="h-4 w-4" />
               </Button>
             </div>
           </div>
@@ -1374,15 +1321,6 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={isAnalyticsDialogOpen} onOpenChange={setIsAnalyticsDialogOpen}>
-          <DialogContent className="flex max-h-[90dvh] w-[calc(100vw-1rem)] flex-col overflow-hidden border-slate-700 bg-slate-950 p-0 sm:max-w-3xl">
-            <DialogHeader className="shrink-0 border-b border-border/60 px-5 py-4">
-              <DialogTitle className="font-mono text-lg">{ui.historicalTrends}</DialogTitle>
-            </DialogHeader>
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{analyticsContent}</div>
-          </DialogContent>
-        </Dialog>
-
         <Dialog open={isRouteDialogOpen} onOpenChange={setIsRouteDialogOpen}>
           <DialogContent className="w-[calc(100vw-1.5rem)] max-w-md border-slate-700 bg-slate-950 text-slate-100">
             <DialogHeader>
@@ -1401,7 +1339,7 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
         key={`desktop-map-${desktopMapKey}`}
         readings={filteredReadings}
         emptyMapText={dict.noGeocodedData}
-        recentActivity={activityFeed}
+        recentActivity={[]}
         feedTitle={dict.recentIotData}
         feedEmptyText={dict.noRecentActivity}
         mapHeightClass="h-screen"
@@ -1441,29 +1379,6 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
           {isExportingReport ? ui.exporting : "Download Report"}
         </Button>
 
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              variant="secondary"
-              className="h-11 justify-start gap-3 rounded-xl border border-slate-700 bg-slate-900 px-4 text-slate-100 shadow-lg hover:bg-slate-800"
-            >
-              <span className="relative flex h-3 w-3">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/80" />
-                <span className="relative inline-flex h-3 w-3 rounded-full bg-emerald-500" />
-              </span>
-              <Activity className="h-4 w-4" />
-              <span className="text-sm font-semibold">Recent Readings</span>
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent side="top" align="end" className="z-50 w-[340px] p-0">
-            <CompactActivityFeed
-              title={dict.recentIotData}
-              emptyText={dict.noRecentActivity}
-              items={activityFeed}
-              className="rounded-xl border-slate-700"
-            />
-          </PopoverContent>
-        </Popover>
       </div>
 
       <section id="map-view" aria-hidden className="h-0" />

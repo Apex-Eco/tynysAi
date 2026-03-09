@@ -11,7 +11,6 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface SensorReading {
@@ -58,17 +57,6 @@ const barTickFormatter = new Intl.DateTimeFormat("en-US", {
   timeZone: "UTC",
 });
 
-const latestTimestampFormatter = new Intl.DateTimeFormat("en-US", {
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  hour12: false,
-  timeZone: "UTC",
-});
-
 function formatTimestampLabel(timestamp: string) {
   const date = new Date(timestamp);
   return Number.isNaN(date.getTime()) ? timestamp : barTimestampFormatter.format(date);
@@ -77,11 +65,6 @@ function formatTimestampLabel(timestamp: string) {
 function formatTickLabel(timestamp: string) {
   const date = new Date(timestamp);
   return Number.isNaN(date.getTime()) ? timestamp : barTickFormatter.format(date);
-}
-
-function formatLatestTimestamp(timestamp: string) {
-  const date = new Date(timestamp);
-  return Number.isNaN(date.getTime()) ? timestamp : `${latestTimestampFormatter.format(date)} UTC`;
 }
 
 function SensorBarTooltip({ active, payload }: SensorBarTooltipProps) {
@@ -105,17 +88,6 @@ function SensorBarTooltip({ active, payload }: SensorBarTooltipProps) {
 }
 
 export function SensorChart({ data, actionSlot }: SensorChartProps) {
-  // Get the most recent reading for real-time display
-  const latestReading = useMemo(() => {
-    if (data.length === 0) return null;
-
-    const sortedData = [...data]
-      .filter((r) => Number.isFinite(r.value))
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-    return sortedData.length ? sortedData[0] : null;
-  }, [data]);
-
   // Filter and transform data for the chart
   const chartData = useMemo(() => {
     // Sort by timestamp and format for recharts
@@ -154,51 +126,6 @@ export function SensorChart({ data, actionSlot }: SensorChartProps) {
 
   return (
     <div className="space-y-4 w-full">
-      {/* Real-Time Status Badge */}
-      {latestReading && (
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-3 flex-wrap">
-            <Badge variant="default" className="bg-green-600 hover:bg-green-700">
-              <span className="relative flex h-2 w-2 mr-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
-              </span>
-              Real-Time
-            </Badge>
-            <div className="text-sm flex items-center gap-2 flex-wrap">
-              <span className="font-semibold">Latest:</span>
-              <span className="text-muted-foreground">
-                Sensor: {latestReading.sensorId}
-              </span>
-              {latestReading.location && (
-                <>
-                  <span className="text-muted-foreground">•</span>
-                  <span className="text-muted-foreground">
-                    Location: {latestReading.location}
-                  </span>
-                </>
-              )}
-              {latestReading.transportType && (
-                <>
-                  <span className="text-muted-foreground">•</span>
-                  <span className="text-muted-foreground">
-                    Type: {latestReading.transportType}
-                  </span>
-                </>
-              )}
-              <span className="text-muted-foreground">•</span>
-              <span className="font-mono font-bold text-3xl leading-none">
-                {latestReading.value.toFixed(2)}
-              </span>
-              <span className="text-muted-foreground">•</span>
-              <span className="text-muted-foreground text-xs">
-                {formatLatestTimestamp(latestReading.timestamp)}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Chart */}
       <Card className="border-0 shadow-lg bg-gradient-to-br from-cyan-500/5 to-blue-500/5">
         <CardHeader className="flex flex-col gap-3 border-b bg-gradient-to-r from-cyan-500/5 to-blue-500/5 pb-8 sm:flex-row sm:items-center sm:justify-between">

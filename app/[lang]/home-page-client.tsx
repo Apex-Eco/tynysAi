@@ -73,12 +73,12 @@ const almatyReadings: MapReading[] = [
 ];
 
 const contributors = [
-  { group: "Done by", name: "TynysAi Research Team", note: "Placeholder team profile" },
-  { group: "Done by", name: "IoT + ML Engineering Unit", note: "Placeholder team profile" },
-  { group: "Partner", name: "City Transport Operations", note: "Placeholder partner" },
-  { group: "Partner", name: "Public Health Advisors", note: "Placeholder partner" },
-  { group: "Benchmark", name: "Qingping AQM Gen 2", note: "Reference comparison device" },
-  { group: "Partner", name: "University Lab", note: "Placeholder partner" },
+  { group: "Done by", name: "Farabi AGI Center", note: "Farabi AGI Center" },
+  { group: "Done by", name: "Farabi AGI Center", note: "Farabi AGI Center" },
+  { group: "Partner", name: "Farabi AGI Center", note: "Farabi AGI Center" },
+  { group: "Partner", name: "Farabi AGI Center", note: "Farabi AGI Center" },
+  { group: "Benchmark", name: "Farabi AGI Center", note: "Farabi AGI Center" },
+  { group: "Partner", name: "Farabi AGI Center", note: "Farabi AGI Center" },
 ];
 
 type BenchmarkMetricKey = "pm25" | "pm10";
@@ -330,7 +330,7 @@ export function HomePage({
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-cyan-300">Done By & Partners</p>
                 <h3 className="mt-1 text-xl font-semibold text-zinc-100 md:text-2xl">Collaboration Strip</h3>
               </div>
-              <p className="text-xs text-slate-400">Moving placeholders</p>
+              <p className="text-xs text-slate-400">Farabi AGI Center</p>
             </div>
 
             <div className="overflow-hidden rounded-2xl border border-slate-800/80 bg-slate-950/60 py-3">
