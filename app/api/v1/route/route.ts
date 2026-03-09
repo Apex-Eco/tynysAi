@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import type { RouteGeometryResponse, RouteRequestBody } from '@/types/route';
+import type { RouteGeometryResponse, RouteRequestBody, RouteStep } from '@/types/route';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,9 +20,70 @@ type OsrmRouteResponse = {
     geometry?: {
       coordinates?: Array<[number, number]>;
     };
+    legs?: Array<{
+      steps?: Array<{
+        distance: number;
+        duration: number;
+        name?: string;
+        maneuver?: {
+          type?: string;
+          modifier?: string;
+        };
+      }>;
+    }>;
   }>;
   message?: string;
 };
+
+function toTitleCase(value: string) {
+  return value
+    .replace(/[_-]/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function formatStepInstruction(step: {
+  name?: string;
+  maneuver?: {
+    type?: string;
+    modifier?: string;
+  };
+}) {
+  const maneuverType = step.maneuver?.type?.trim();
+  const maneuverModifier = step.maneuver?.modifier?.trim();
+  const roadName = step.name?.trim();
+
+  if (maneuverType === 'depart') {
+    return roadName ? `Head out via ${roadName}` : 'Start route';
+  }
+
+  if (maneuverType === 'arrive') {
+    return 'Arrive at destination';
+  }
+
+  if (maneuverType === 'roundabout') {
+    return roadName ? `Enter roundabout and continue on ${roadName}` : 'Enter roundabout';
+  }
+
+  if (maneuverType === 'continue' || maneuverType === 'new name') {
+    return roadName ? `Continue on ${roadName}` : 'Continue straight';
+  }
+
+  if (maneuverModifier) {
+    const direction = toTitleCase(maneuverModifier);
+    return roadName ? `Turn ${direction} onto ${roadName}` : `Turn ${direction}`;
+  }
+
+  if (maneuverType) {
+    const typeLabel = toTitleCase(maneuverType);
+    return roadName ? `${typeLabel} onto ${roadName}` : typeLabel;
+  }
+
+  return roadName ? `Continue on ${roadName}` : 'Continue';
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -39,7 +100,7 @@ export async function POST(request: NextRequest) {
     }
 
     const baseUrl = process.env.OSRM_API_BASE_URL ?? 'https://router.project-osrm.org';
-    const osrmUrl = `${baseUrl}/route/v1/driving/${source.longitude},${source.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson&steps=false`;
+    const osrmUrl = `${baseUrl}/route/v1/driving/${source.longitude},${source.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson&steps=true`;
 
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => {
@@ -78,10 +139,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Routing provider returned invalid geometry' }, { status: 502 });
     }
 
+    const steps: RouteStep[] = (primary.legs ?? [])
+      .flatMap((leg) => leg.steps ?? [])
+      .filter((step) => Number.isFinite(step.distance) && Number.isFinite(step.duration))
+      .map((step) => ({
+        distanceMeters: step.distance,
+        durationSeconds: step.duration,
+        instruction: formatStepInstruction(step),
+        maneuverType: step.maneuver?.type,
+        maneuverModifier: step.maneuver?.modifier,
+        name: step.name,
+      }));
+
     const response: RouteGeometryResponse = {
       geometry,
       distanceMeters: primary.distance,
       durationSeconds: primary.duration,
+      steps,
     };
 
     return NextResponse.json(response);

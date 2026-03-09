@@ -31,4 +31,14 @@ export type RouteGeometryResponse = {
   geometry: [number, number][];
   distanceMeters: number;
   durationSeconds: number;
+  steps?: RouteStep[];
+};
+
+export type RouteStep = {
+  distanceMeters: number;
+  durationSeconds: number;
+  instruction: string;
+  maneuverType?: string;
+  maneuverModifier?: string;
+  name?: string;
 };
