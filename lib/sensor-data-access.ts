@@ -7,6 +7,7 @@ import { eq, and, desc, sql, gte, lte } from 'drizzle-orm';
 import { db } from './db';
 import { sensors, sensorReadings, sites, sensorHealth } from './db/schema';
 import type { SensorReadingPayload } from './sensor-validation';
+import { isValidAlmatyCoordinate } from './geo';
 
 /**
  * Find or create a site by name
@@ -42,7 +43,17 @@ export async function findOrCreateSensor(params: {
   deviceId: string;
   siteId?: number | null;
   firmwareVersion?: string;
+  latitude?: number;
+  longitude?: number;
 }): Promise<typeof sensors.$inferSelect> {
+  const hasValidCoordinates =
+    params.latitude !== undefined &&
+    params.longitude !== undefined &&
+    isValidAlmatyCoordinate(params.latitude, params.longitude);
+
+  const normalizedLatitude = hasValidCoordinates ? params.latitude : undefined;
+  const normalizedLongitude = hasValidCoordinates ? params.longitude : undefined;
+
   // Try to find existing sensor
   const [existingSensor] = await db
     .select()
@@ -51,12 +62,20 @@ export async function findOrCreateSensor(params: {
     .limit(1);
 
   if (existingSensor) {
-    // Update firmware version if provided
-    if (params.firmwareVersion && existingSensor.firmwareVersion !== params.firmwareVersion) {
+    const hasFirmwareUpdate =
+      !!params.firmwareVersion && existingSensor.firmwareVersion !== params.firmwareVersion;
+    const hasLatitudeUpdate =
+      normalizedLatitude !== undefined && existingSensor.latitude !== normalizedLatitude;
+    const hasLongitudeUpdate =
+      normalizedLongitude !== undefined && existingSensor.longitude !== normalizedLongitude;
+
+    if (hasFirmwareUpdate || hasLatitudeUpdate || hasLongitudeUpdate) {
       const [updated] = await db
         .update(sensors)
         .set({
-          firmwareVersion: params.firmwareVersion,
+          firmwareVersion: hasFirmwareUpdate ? params.firmwareVersion : existingSensor.firmwareVersion,
+          latitude: hasLatitudeUpdate ? normalizedLatitude : existingSensor.latitude,
+          longitude: hasLongitudeUpdate ? normalizedLongitude : existingSensor.longitude,
           updatedAt: new Date(),
         })
         .where(eq(sensors.id, existingSensor.id))
@@ -76,6 +95,8 @@ export async function findOrCreateSensor(params: {
       siteId: params.siteId || null,
       sensorType: 'air_quality', // Default type
       firmwareVersion: params.firmwareVersion || null,
+      latitude: normalizedLatitude ?? null,
+      longitude: normalizedLongitude ?? null,
       isActive: true,
       updatedAt: new Date(),
     })

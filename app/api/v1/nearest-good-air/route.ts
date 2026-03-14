@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { getUserByEmail, getRecentSensorReadings } from '@/lib/data-access';
+import { getUserByEmail, getRecentPublicSensorReadings } from '@/lib/data-access';
 import type { GoodAirOption, NearestGoodAirResponse, RouteAqiBand } from '@/types/route';
+import { isValidAlmatyCoordinate, parseCoordinatePair } from '@/lib/geo';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,16 +15,7 @@ function parseFloatParam(value: string | null): number | null {
 }
 
 function parseLocation(location?: string | null): ParsedCoords | null {
-  if (!location || !location.includes(',')) return null;
-
-  const [latStr, lngStr] = location.split(',').map((part) => part.trim());
-  const latitude = Number(latStr);
-  const longitude = Number(lngStr);
-
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
-
-  return { latitude, longitude };
+  return parseCoordinatePair(location);
 }
 
 function toRadians(value: number) {
@@ -76,12 +68,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'lat and lng query params are required' }, { status: 400 });
     }
 
-    if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
-      return NextResponse.json({ error: 'Invalid latitude or longitude' }, { status: 400 });
+    if (!isValidAlmatyCoordinate(latitude, longitude)) {
+      return NextResponse.json({ error: 'Coordinates must be within Almaty bounds' }, { status: 400 });
     }
 
     const source = { latitude, longitude };
-    const readings = await getRecentSensorReadings(user.id, 1500);
+    const readings = await getRecentPublicSensorReadings(1500);
     const deduped = new Map<string, GoodAirOption>();
 
     for (const reading of readings) {

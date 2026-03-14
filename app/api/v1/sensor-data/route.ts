@@ -5,29 +5,24 @@ import {
   type SensorReadingPayload 
 } from '@/lib/sensor-validation';
 import { getSession } from '@/lib/auth';
-import { getUserByEmail, getRecentSensorReadings } from '@/lib/data-access';
+import {
+  getUserByEmail,
+  getRecentPublicSensorReadings,
+} from '@/lib/data-access';
 import { 
   insertSensorReading,
   findOrCreateSensor,
   findOrCreateSite,
   checkDuplicateReading
 } from '@/lib/sensor-data-access';
+import { isValidAlmatyCoordinate, parseCoordinatePair } from '@/lib/geo';
 
 export const dynamic = 'force-dynamic';
 
 type DeviceStatus = 'online' | 'idle' | 'offline';
 
 function parseCoords(location?: string | null) {
-  if (!location) return null;
-
-  const [latStr, lngStr] = location.split(',').map((part) => part.trim());
-  const latitude = Number(latStr);
-  const longitude = Number(lngStr);
-
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
-
-  return { latitude, longitude };
+  return parseCoordinatePair(location);
 }
 
 function deriveStatus(lastSeenAt: Date): DeviceStatus {
@@ -45,20 +40,37 @@ function deriveStatus(lastSeenAt: Date): DeviceStatus {
  * Returns latest device snapshot list for current user.
  * Requires authenticated session.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const session = await getSession();
+    const searchParams = request.nextUrl.searchParams;
+    const isPublicRequest = searchParams.get('public') === '1';
+    const requestedLimit = Number(searchParams.get('limit') ?? '300');
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(Math.max(Math.floor(requestedLimit), 1), 2000)
+      : 300;
 
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const readings = isPublicRequest
+      ? await getRecentPublicSensorReadings(limit)
+      : await (async () => {
+          const session = await getSession();
+
+          if (!session?.user?.email) {
+            throw new Error('UNAUTHORIZED');
+          }
+
+          const user = await getUserByEmail(session.user.email);
+          if (!user) {
+            throw new Error('USER_NOT_FOUND');
+          }
+
+          // Authenticated widgets should reflect the same live ingest stream
+          // the public map uses, not account-seeded demo rows.
+          return getRecentPublicSensorReadings(limit);
+        })();
+
+    if (!Array.isArray(readings)) {
+      return NextResponse.json({ devices: [], readings: [] });
     }
-
-    const user = await getUserByEmail(session.user.email);
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
-    const readings = await getRecentSensorReadings(user.id, 1000);
     const latestByDevice = new Map<string, (typeof readings)[number]>();
 
     for (const reading of readings) {
@@ -89,8 +101,32 @@ export async function GET() {
       })
       .filter((device): device is NonNullable<typeof device> => device !== null);
 
-    return NextResponse.json({ devices });
+    const normalizedReadings = readings
+      .filter((reading) => Boolean(reading.sensorId) && Boolean(parseCoords(reading.location)))
+      .map((reading) => ({
+        sensorId: reading.sensorId,
+        location: reading.location,
+        value: Number(reading.value),
+        timestamp: reading.timestamp,
+        mainReadings: {
+          pm25: reading.pm25 ?? undefined,
+          pm10: reading.pm10 ?? undefined,
+          co2: reading.co2 ?? undefined,
+          temperatureC: reading.temperature ?? undefined,
+          humidityPct: reading.humidity ?? undefined,
+        },
+      }));
+
+    return NextResponse.json({ devices, readings: normalizedReadings });
   } catch (error) {
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    if (error instanceof Error && error.message === 'USER_NOT_FOUND') {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
     console.error('Error fetching device snapshots:', error);
     return NextResponse.json(
       {
@@ -115,6 +151,8 @@ export async function GET() {
  *   "device_id": "lab01",
  *   "site": "AGI_Lab",
  *   "timestamp": "2024-01-15T10:30:00Z",
+ *   "latitude": 43.2221,
+ *   "longitude": 76.8512,
  *   "readings": {
  *     "pm1": 12.3,
  *     "pm25": 25.7,
@@ -191,6 +229,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if ((payload.latitude !== undefined || payload.longitude !== undefined)) {
+      if (payload.latitude === undefined || payload.longitude === undefined) {
+        return NextResponse.json(
+          { error: 'Both latitude and longitude are required together' },
+          { status: 400 }
+        );
+      }
+
+      if (!isValidAlmatyCoordinate(payload.latitude, payload.longitude)) {
+        return NextResponse.json(
+          { error: 'Coordinates must be within Almaty bounds' },
+          { status: 400 }
+        );
+      }
+    }
+
     // Generate hash for duplicate detection
     const dataHash = generateDataHash(payload);
 
@@ -218,6 +272,8 @@ export async function POST(request: NextRequest) {
       deviceId: payload.device_id,
       siteId,
       firmwareVersion: payload.metadata?.firmware,
+      latitude: payload.latitude,
+      longitude: payload.longitude,
     });
 
     // Insert sensor reading

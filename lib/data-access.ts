@@ -108,7 +108,11 @@ export async function getUserData(userId: number) {
  * @param limit - Maximum number of readings to retrieve (default: 100)
  * @returns Array of sensor readings for the specified user in legacy format
  */
-export async function getRecentSensorReadings(userId: number, limit: number = 100) {
+export async function getRecentSensorReadings(
+  userId: number,
+  limit: number = 100,
+  options?: { includePublicReadings?: boolean },
+) {
   try {
     const readings = await db
       .select({
@@ -120,6 +124,8 @@ export async function getRecentSensorReadings(userId: number, limit: number = 10
         pm10: sensorReadings.pm10,
         pm1: sensorReadings.pm1,
         co2: sensorReadings.co2,
+        temperature: sensorReadings.temperature,
+        humidity: sensorReadings.humidity,
         value: sensorReadings.value,
         location: sensorReadings.location,
         transportType: sensorReadings.transportType,
@@ -130,10 +136,10 @@ export async function getRecentSensorReadings(userId: number, limit: number = 10
       .from(sensorReadings)
       .leftJoin(sensors, eq(sensorReadings.sensorId, sensors.id))
       .where(
-        or(
-          eq(sensorReadings.userId, userId),
-          isNull(sensorReadings.userId)
-        )
+        options?.includePublicReadings
+          ?? true
+          ? or(eq(sensorReadings.userId, userId), isNull(sensorReadings.userId))
+          : eq(sensorReadings.userId, userId)
       )
       .orderBy(desc(sensorReadings.ingestedAt))
       .limit(limit);
@@ -151,7 +157,13 @@ export async function getRecentSensorReadings(userId: number, limit: number = 10
         locationStr = reading.location;
       }
 
-      const { category: aqiCategory, rule: aqiRule } = classifyAqiCategory(reading.pm25, reading.pm10);
+      const { category: aqiCategory, rule: aqiRule } = classifyAqiCategory(
+        reading.pm25,
+        reading.pm10,
+        reading.co2,
+        reading.temperature,
+        reading.humidity,
+      );
 
       return {
         id: reading.id,
@@ -165,6 +177,9 @@ export async function getRecentSensorReadings(userId: number, limit: number = 10
         value: reading.value ?? reading.pm25 ?? reading.pm10 ?? reading.pm1 ?? reading.co2 ?? 0,
         pm25: reading.pm25,
         pm10: reading.pm10,
+        co2: reading.co2,
+        temperature: reading.temperature,
+        humidity: reading.humidity,
         aqiCategory,
         aqiRule,
         location: locationStr,
@@ -183,6 +198,84 @@ export async function getRecentSensorReadings(userId: number, limit: number = 10
     const errorDetails = error instanceof Error ? error.stack : String(error);
     console.error('Error details:', errorDetails);
     throw new Error(`Failed to fetch sensor readings: ${errorMessage}`);
+  }
+}
+
+/**
+ * Retrieves recent public sensor readings (userId is null) for unauthenticated surfaces.
+ */
+export async function getRecentPublicSensorReadings(limit: number = 100) {
+  try {
+    const readings = await db
+      .select({
+        id: sensorReadings.id,
+        sensorId: sensorReadings.sensorId,
+        deviceId: sensors.deviceId,
+        timestamp: sensorReadings.timestamp,
+        pm25: sensorReadings.pm25,
+        pm10: sensorReadings.pm10,
+        pm1: sensorReadings.pm1,
+        co2: sensorReadings.co2,
+        temperature: sensorReadings.temperature,
+        humidity: sensorReadings.humidity,
+        value: sensorReadings.value,
+        location: sensorReadings.location,
+        transportType: sensorReadings.transportType,
+        ingestedAt: sensorReadings.ingestedAt,
+        latitude: sensors.latitude,
+        longitude: sensors.longitude,
+      })
+      .from(sensorReadings)
+      .leftJoin(sensors, eq(sensorReadings.sensorId, sensors.id))
+      .where(isNull(sensorReadings.userId))
+      .orderBy(desc(sensorReadings.ingestedAt))
+      .limit(limit);
+
+    return readings.map((reading) => {
+      let locationStr = reading.location;
+      if (reading.latitude != null && reading.longitude != null) {
+        locationStr = `${reading.latitude},${reading.longitude}`;
+      } else if (reading.location && !reading.location.includes(',')) {
+        locationStr = reading.location;
+      }
+
+      const { category: aqiCategory, rule: aqiRule } = classifyAqiCategory(
+        reading.pm25,
+        reading.pm10,
+        reading.co2,
+        reading.temperature,
+        reading.humidity,
+      );
+
+      return {
+        id: reading.id,
+        timestamp: reading.timestamp instanceof Date
+          ? reading.timestamp.toISOString()
+          : typeof reading.timestamp === 'string'
+            ? reading.timestamp
+            : new Date(reading.timestamp).toISOString(),
+        sensorId: reading.deviceId || reading.sensorId?.toString() || '',
+        value: reading.value ?? reading.pm25 ?? reading.pm10 ?? reading.pm1 ?? reading.co2 ?? 0,
+        pm25: reading.pm25,
+        pm10: reading.pm10,
+        co2: reading.co2,
+        temperature: reading.temperature,
+        humidity: reading.humidity,
+        aqiCategory,
+        aqiRule,
+        location: locationStr,
+        transportType: reading.transportType,
+        ingestedAt: reading.ingestedAt instanceof Date
+          ? reading.ingestedAt
+          : typeof reading.ingestedAt === 'string'
+            ? new Date(reading.ingestedAt)
+            : reading.ingestedAt,
+      };
+    });
+  } catch (error) {
+    console.error('Error fetching public sensor readings:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    throw new Error(`Failed to fetch public sensor readings: ${errorMessage}`);
   }
 }
 

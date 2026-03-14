@@ -9,6 +9,8 @@ export interface SensorReadingPayload {
   device_id: string;
   site?: string;
   timestamp: string;
+  latitude?: number;
+  longitude?: number;
   readings: {
     pm1?: number;
     pm25?: number;
@@ -55,6 +57,8 @@ const VALUE_RANGES = {
   pressure: { min: 800, max: 1200 }, // hPa
   battery: { min: 0, max: 100 }, // Percentage
   signal: { min: -120, max: 0 }, // dBm
+  latitude: { min: -90, max: 90 },
+  longitude: { min: -180, max: 180 },
 };
 
 /**
@@ -226,6 +230,19 @@ export function validateSensorReading(payload: SensorReadingPayload): Validation
       if (!result.isValid) errors.push(result.error!);
       if (result.warning) warnings.push(result.warning);
     }
+  }
+
+  // Optional top-level coordinates for map marker placement
+  if (payload.latitude !== undefined) {
+    const result = validateRange(payload.latitude, 'latitude', VALUE_RANGES.latitude);
+    if (!result.isValid) errors.push(result.error!);
+    if (result.warning) warnings.push(result.warning);
+  }
+
+  if (payload.longitude !== undefined) {
+    const result = validateRange(payload.longitude, 'longitude', VALUE_RANGES.longitude);
+    if (!result.isValid) errors.push(result.error!);
+    if (result.warning) warnings.push(result.warning);
   }
   
   // Validate metadata if present

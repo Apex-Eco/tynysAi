@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { RouteGeometryResponse, RouteRequestBody, RouteStep } from '@/types/route';
+import { isValidAlmatyCoordinate } from '@/lib/geo';
 
 export const dynamic = 'force-dynamic';
 
 function isValidCoordinate(latitude: number, longitude: number) {
-  return (
-    Number.isFinite(latitude) &&
-    Number.isFinite(longitude) &&
-    Math.abs(latitude) <= 90 &&
-    Math.abs(longitude) <= 180
-  );
+  return isValidAlmatyCoordinate(latitude, longitude);
 }
 
 type OsrmRouteResponse = {
