@@ -1,4 +1,4 @@
-import { eq, desc, count } from 'drizzle-orm';
+import { eq, desc, count, or, isNull } from 'drizzle-orm';
 import { db } from './db';
 import { iotData, sensorReadings, users, sensors } from './db/schema';
 import type { SensorReading } from './csv-parser';
@@ -129,7 +129,12 @@ export async function getRecentSensorReadings(userId: number, limit: number = 10
       })
       .from(sensorReadings)
       .leftJoin(sensors, eq(sensorReadings.sensorId, sensors.id))
-      .where(eq(sensorReadings.userId, userId))
+      .where(
+        or(
+          eq(sensorReadings.userId, userId),
+          isNull(sensorReadings.userId)
+        )
+      )
       .orderBy(desc(sensorReadings.ingestedAt))
       .limit(limit);
 
