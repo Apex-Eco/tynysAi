@@ -8,10 +8,15 @@
     "badge": "Air Quality Intelligence",
     "title": "Real-Time Air Quality",
     "subtitle": "Monitoring for Dynamic Environments",
-    "description": "Autonomous real-time air quality monitoring for buses, metros, and trolleybuses.",
+    "description": "Real-time air quality monitoring for public transport fleets.",
     "getStarted": "Get Started",
     "goToDashboard": "Go to Dashboard",
     "learnMore": "Learn More"
+  },
+  "crossPlatform": {
+    "badge": "Cross platform",
+    "title": "Works across most devices",
+    "description": "Monitor routes on desktop, review trends on tablet, and check quick updates on mobile."
   },
   "heroPillars": {
     "fewShot": "Few-shot structure examples",
