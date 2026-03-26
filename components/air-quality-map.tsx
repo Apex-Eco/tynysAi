@@ -227,6 +227,7 @@ function parseLocation(location?: string | null): LatLngTuple | null {
 
 type AggregatedPoint = {
   key: string;
+  locationLabel: string;
   coords: LatLngTuple;
   count: number;
   avgValue: number;
@@ -250,13 +251,15 @@ function aggregatePoints(readings: MapReading[]): AggregatedPoint[] {
     const coords = parseLocation(reading.location);
     if (!coords) return;
 
-    const key = reading.location!.trim();
+    const locationLabel = reading.location!.trim();
+    const key = `${reading.sensorId}@@${locationLabel}`;
     const existing = map.get(key);
     const timestamp = normalizeTimestamp(reading.timestamp);
 
     if (!existing) {
       map.set(key, {
         key,
+        locationLabel,
         coords,
         count: 1,
         avgValue: reading.value,
@@ -900,30 +903,86 @@ export function AirQualityMap({
                         return;
                       }
 
-                      const sortedReadings = [...point.readings].sort((a, b) => {
-                        const aTs = normalizeTimestamp(a.timestamp);
-                        const bTs = normalizeTimestamp(b.timestamp);
-                        if (!aTs && !bTs) return 0;
-                        if (!aTs) return 1;
-                        if (!bTs) return -1;
-                        return bTs.localeCompare(aTs);
-                      });
+                      void (async () => {
+                        try {
+                          const histories = await Promise.all(
+                            point.sensorIds.map(async (sensorId) => {
+                              const response = await fetch(
+                                `/api/v1/sensor-data?device_id=${encodeURIComponent(sensorId)}&limit=50`,
+                                {
+                                  method: 'GET',
+                                  cache: 'no-store',
+                                },
+                              );
 
-                      setSelectedDevice({
-                        location: point.key,
-                        avgValue: point.avgValue,
-                        latestValue: point.latestValue,
-                        sampleCount: point.count,
-                        sensorIds: point.sensorIds,
-                        readings: sortedReadings,
-                      });
-                      setIsDeviceModalOpen(true);
+                              if (!response.ok) {
+                                throw new Error(`History fetch failed (${response.status})`);
+                              }
+
+                              const payload = (await response.json()) as { readings?: MapReading[] };
+                              return Array.isArray(payload.readings) ? payload.readings : [];
+                            }),
+                          );
+
+                          const merged = histories
+                            .flat()
+                            .filter((item) => typeof item.sensorId === 'string' && Number.isFinite(item.value));
+
+                          const dedup = new Map<string, MapReading>();
+                          for (const item of merged) {
+                            const dedupeKey = `${item.sensorId}|${item.timestamp ?? ''}`;
+                            if (!dedup.has(dedupeKey)) {
+                              dedup.set(dedupeKey, item);
+                            }
+                          }
+
+                          const sortedReadings = Array.from(dedup.values()).sort((a, b) => {
+                            const aTs = normalizeTimestamp(a.timestamp);
+                            const bTs = normalizeTimestamp(b.timestamp);
+                            if (!aTs && !bTs) return 0;
+                            if (!aTs) return 1;
+                            if (!bTs) return -1;
+                            return bTs.localeCompare(aTs);
+                          });
+
+                          setSelectedDevice({
+                            location: point.locationLabel,
+                            avgValue: point.avgValue,
+                            latestValue: point.latestValue,
+                            sampleCount: sortedReadings.length,
+                            sensorIds: point.sensorIds,
+                            readings: sortedReadings,
+                          });
+                          setIsDeviceModalOpen(true);
+                        } catch (error) {
+                          console.error('Failed to fetch device history:', error);
+
+                          const fallbackSortedReadings = [...point.readings].sort((a, b) => {
+                            const aTs = normalizeTimestamp(a.timestamp);
+                            const bTs = normalizeTimestamp(b.timestamp);
+                            if (!aTs && !bTs) return 0;
+                            if (!aTs) return 1;
+                            if (!bTs) return -1;
+                            return bTs.localeCompare(aTs);
+                          });
+
+                          setSelectedDevice({
+                            location: point.locationLabel,
+                            avgValue: point.avgValue,
+                            latestValue: point.latestValue,
+                            sampleCount: point.count,
+                            sensorIds: point.sensorIds,
+                            readings: fallbackSortedReadings,
+                          });
+                          setIsDeviceModalOpen(true);
+                        }
+                      })();
                     },
                   }}
                 >
                   <Popup>
                     <div className="space-y-1 text-xs">
-                      <p className="font-semibold">{point.key}</p>
+                      <p className="font-semibold">{point.locationLabel}</p>
                       <p>{text.avg}: {point.avgValue.toFixed(1)}</p>
                       <p>{text.latest}: {point.latestValue.toFixed(1)}</p>
                       <p>{text.samples}: {point.count}</p>

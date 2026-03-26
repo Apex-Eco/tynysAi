@@ -74,6 +74,17 @@ interface DashboardClientProps {
   dict: DashboardCopy;
 }
 
+type LiveSensorApiResponse = {
+  readings?: Array<{
+    sensorId?: unknown;
+    timestamp?: unknown;
+    value?: unknown;
+    location?: unknown;
+    transportType?: unknown;
+    ingestedAt?: unknown;
+  }>;
+};
+
 type StatValues = {
   totalDataPoints: number;
   activeSensors: number;
@@ -302,6 +313,7 @@ function SectionHeader({ id, icon: Icon, title, className }: SectionHeaderProps)
 
 export function DashboardClient({ readings, dict }: DashboardClientProps) {
   const pathname = usePathname();
+  const [liveReadings, setLiveReadings] = useState<SensorReading[]>(readings);
   const [selectedSensor, setSelectedSensor] = useState<string>("all");
   const [selectedLocation, setSelectedLocation] = useState<string>("all");
   const [selectedTransportType, setSelectedTransportType] = useState<string>("all");
@@ -344,15 +356,87 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
       ? "Құрылғыны қосу"
       : "Connect device";
 
+  useEffect(() => {
+    setLiveReadings(readings);
+  }, [readings]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    let isActive = true;
+    const pollMs = 5000;
+
+    const fetchLiveReadings = async () => {
+      try {
+        const response = await fetch('/api/v1/sensor-data?public=1&latest=true&limit=100', {
+          method: 'GET',
+          cache: 'no-store',
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed with status ${response.status}`);
+        }
+
+        const payload = (await response.json()) as LiveSensorApiResponse;
+        if (!isActive) return;
+
+        const normalized: SensorReading[] = [];
+        if (Array.isArray(payload.readings)) {
+          for (const reading of payload.readings) {
+            const sensorId = typeof reading.sensorId === 'string' ? reading.sensorId : null;
+            const location = typeof reading.location === 'string' ? reading.location : null;
+            const timestamp = typeof reading.timestamp === 'string' ? reading.timestamp : null;
+            const value =
+              typeof reading.value === 'number' && Number.isFinite(reading.value)
+                ? reading.value
+                : null;
+
+            if (!sensorId || !location || !timestamp || value === null) {
+              continue;
+            }
+
+            normalized.push({
+              sensorId,
+              location,
+              timestamp,
+              value,
+              transportType: typeof reading.transportType === 'string' ? reading.transportType : null,
+              ingestedAt:
+                typeof reading.ingestedAt === 'string'
+                || reading.ingestedAt instanceof Date
+                  ? reading.ingestedAt
+                  : undefined,
+            });
+          }
+        }
+
+        setLiveReadings(normalized);
+      } catch (error) {
+        if (!isActive) return;
+        console.error('Failed to fetch live dashboard readings:', error);
+      }
+    };
+
+    void fetchLiveReadings();
+    const intervalId = window.setInterval(() => {
+      void fetchLiveReadings();
+    }, pollMs);
+
+    return () => {
+      isActive = false;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
   const filterOptions = useMemo(() => {
-    const sensors = new Set(readings.map((reading) => reading.sensorId));
+    const sensors = new Set(liveReadings.map((reading) => reading.sensorId));
     const locations = new Set(
-      readings
+      liveReadings
         .filter((reading) => reading.location)
         .map((reading) => reading.location as string)
     );
     const transportTypes = new Set(
-      readings
+      liveReadings
         .filter((reading) => reading.transportType)
         .map((reading) => reading.transportType as string)
     );
@@ -362,10 +446,10 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
       locations: Array.from(locations).sort(),
       transportTypes: Array.from(transportTypes).sort(),
     };
-  }, [readings]);
+  }, [liveReadings]);
 
   const filteredReadings = useMemo(() => {
-    let filtered = [...readings];
+    let filtered = [...liveReadings];
 
     if (sensorSearchQuery.trim()) {
       const query = sensorSearchQuery.trim().toLowerCase();
@@ -398,7 +482,7 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
       (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     );
   }, [
-    readings,
+    liveReadings,
     sensorSearchQuery,
     selectedSensor,
     selectedLocation,

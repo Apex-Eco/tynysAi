@@ -110,7 +110,7 @@ export function HomePage({
 
     const fetchLiveReadings = async () => {
       try {
-        const response = await fetch("/api/v1/sensor-data?public=1&limit=400", {
+        const response = await fetch("/api/v1/sensor-data?public=1&latest=true&limit=100", {
           method: "GET",
           cache: "no-store",
         });
