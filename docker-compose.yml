@@ -37,7 +37,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - default
+      - data-tynys_default
 
 volumes:
   postgres_data:
     driver: local
+
+networks:
+  default:
+  data-tynys_default:
+    external: true
