@@ -25,6 +25,87 @@ function parseCoords(location?: string | null) {
   return parseCoordinatePair(location);
 }
 
+function pickFirstNumber(source: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const raw = source[key];
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      return raw;
+    }
+    if (typeof raw === 'string' && raw.trim() !== '') {
+      const parsed = Number(raw);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+  return null;
+}
+
+function normalizeReadingFields(reading: Record<string, unknown>) {
+  const pm1 = pickFirstNumber(reading, ['pm1', 'pm1_0', 'PM1']);
+  const pm25 = pickFirstNumber(reading, ['pm25', 'pm2_5', 'PM2.5', 'PM25', 'pm_2_5']);
+  const pm10 = pickFirstNumber(reading, ['pm10', 'pm_10', 'PM10']);
+  const co2 = pickFirstNumber(reading, ['co2', 'CO2', 'co_2']);
+  const voc = pickFirstNumber(reading, ['voc', 'tvoc', 'VOC', 'TVOC']);
+  const temp = pickFirstNumber(reading, ['temperature', 'temp', 'temperatureC', 'TEMP']);
+  const hum = pickFirstNumber(reading, ['humidity', 'hum', 'humidityPct', 'HUM']);
+  const ch2o = pickFirstNumber(reading, ['ch2o', 'CH2O']);
+  const co = pickFirstNumber(reading, ['co', 'CO']);
+  const o3 = pickFirstNumber(reading, ['o3', 'O3']);
+  const no2 = pickFirstNumber(reading, ['no2', 'NO2']);
+
+  return {
+    pm1,
+    pm25,
+    pm10,
+    co2,
+    voc,
+    temp,
+    hum,
+    ch2o,
+    co,
+    o3,
+    no2,
+  };
+}
+
+function normalizeIncomingPayload(rawPayload: Record<string, unknown>): SensorReadingPayload {
+  const rawReadings =
+    typeof rawPayload.readings === 'object' && rawPayload.readings !== null
+      ? (rawPayload.readings as Record<string, unknown>)
+      : rawPayload;
+
+  const normalizedReadings = normalizeReadingFields(rawReadings);
+
+  return {
+    device_id: String(rawPayload.device_id ?? rawPayload.deviceId ?? ''),
+    site: typeof rawPayload.site === 'string' ? rawPayload.site : undefined,
+    timestamp:
+      typeof rawPayload.timestamp === 'string' && rawPayload.timestamp.trim() !== ''
+        ? rawPayload.timestamp
+        : new Date().toISOString(),
+    latitude: pickFirstNumber(rawPayload, ['latitude', 'lat']) ?? undefined,
+    longitude: pickFirstNumber(rawPayload, ['longitude', 'lng', 'lon']) ?? undefined,
+    readings: {
+      pm1: normalizedReadings.pm1 ?? undefined,
+      pm25: normalizedReadings.pm25 ?? undefined,
+      pm10: normalizedReadings.pm10 ?? undefined,
+      co2: normalizedReadings.co2 ?? undefined,
+      voc: normalizedReadings.voc ?? undefined,
+      temp: normalizedReadings.temp ?? undefined,
+      hum: normalizedReadings.hum ?? undefined,
+      ch2o: normalizedReadings.ch2o ?? undefined,
+      co: normalizedReadings.co ?? undefined,
+      o3: normalizedReadings.o3 ?? undefined,
+      no2: normalizedReadings.no2 ?? undefined,
+    },
+    metadata:
+      typeof rawPayload.metadata === 'object' && rawPayload.metadata !== null
+        ? (rawPayload.metadata as SensorReadingPayload['metadata'])
+        : undefined,
+  };
+}
+
 function deriveStatus(lastSeenAt: Date): DeviceStatus {
   const ageMs = Date.now() - lastSeenAt.getTime();
   const ageMinutes = ageMs / 60000;
@@ -103,19 +184,37 @@ export async function GET(request: NextRequest) {
 
     const normalizedReadings = readings
       .filter((reading) => Boolean(reading.sensorId) && Boolean(parseCoords(reading.location)))
-      .map((reading) => ({
-        sensorId: reading.sensorId,
-        location: reading.location,
-        value: Number(reading.value),
-        timestamp: reading.timestamp,
-        mainReadings: {
-          pm25: reading.pm25 ?? undefined,
-          pm10: reading.pm10 ?? undefined,
-          co2: reading.co2 ?? undefined,
-          temperatureC: reading.temperature ?? undefined,
-          humidityPct: reading.humidity ?? undefined,
-        },
-      }));
+      .map((reading) => {
+        const rawReading = reading as unknown as Record<string, unknown>;
+        const normalized = normalizeReadingFields(rawReading);
+        const normalizedValue =
+          pickFirstNumber(rawReading, ['value'])
+          ?? normalized.pm25
+          ?? normalized.pm10
+          ?? normalized.pm1
+          ?? normalized.co2
+          ?? 0;
+
+        return {
+          sensorId: reading.sensorId,
+          location: reading.location,
+          value: normalizedValue,
+          timestamp: reading.timestamp,
+          mainReadings: {
+            pm1: normalized.pm1 ?? undefined,
+            pm25: normalized.pm25 ?? undefined,
+            pm10: normalized.pm10 ?? undefined,
+            co2: normalized.co2 ?? undefined,
+            voc: normalized.voc ?? undefined,
+            temperatureC: normalized.temp ?? undefined,
+            humidityPct: normalized.hum ?? undefined,
+            ch2o: normalized.ch2o ?? undefined,
+            co: normalized.co ?? undefined,
+            o3: normalized.o3 ?? undefined,
+            no2: normalized.no2 ?? undefined,
+          },
+        };
+      });
 
     return NextResponse.json({ devices, readings: normalizedReadings });
   } catch (error) {
@@ -208,7 +307,8 @@ export async function POST(request: NextRequest) {
     // Parse JSON body
     let payload: SensorReadingPayload;
     try {
-      payload = await request.json();
+      const requestPayload = (await request.json()) as Record<string, unknown>;
+      payload = normalizeIncomingPayload(requestPayload);
     } catch {
       return NextResponse.json(
         { error: 'Invalid JSON in request body' },
