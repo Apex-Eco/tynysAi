@@ -127,6 +127,8 @@ export function HomePage({
   session: Session | null;
 }) {
   const [mapReadings, setMapReadings] = useState<MapReading[]>([]);
+  const [isMapLoading, setIsMapLoading] = useState(true);
+  const [hasFetchedMapData, setHasFetchedMapData] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -161,6 +163,10 @@ export function HomePage({
       } catch (error) {
         if (!isActive) return;
         console.error("Failed to fetch live map readings:", error);
+      } finally {
+        if (!isActive) return;
+        setIsMapLoading(false);
+        setHasFetchedMapData(true);
       }
     };
 
@@ -206,6 +212,8 @@ export function HomePage({
 
   const heroEmptyText = "No device connected yet. Connect a device to see live air quality data.";
   const heroEmptyCta = "Contact setup support";
+  const showMapLoadingState = isMapLoading && !hasFetchedMapData;
+  const showMapEmptyState = !isMapLoading && hasFetchedMapData && mapReadings.length === 0;
 
   return (
     <div className="relative overflow-x-hidden bg-[#02050d] text-zinc-100">
@@ -247,12 +255,12 @@ export function HomePage({
           session={session}
           dict={{ hero: dict.hero }}
           mapPreview={(
-            <div className="overflow-hidden rounded-2xl border border-slate-800/80">
+            <div className="relative overflow-hidden rounded-2xl border border-slate-800/80">
               <LandingAirQualityMap
                 readings={mapReadings}
-                emptyStateText={heroEmptyText}
-                emptyStateCtaLabel={heroEmptyCta}
-                emptyStateCtaHref={`/${lang}/contact`}
+                emptyStateText={showMapEmptyState ? heroEmptyText : ""}
+                emptyStateCtaLabel={showMapEmptyState ? heroEmptyCta : undefined}
+                emptyStateCtaHref={showMapEmptyState ? `/${lang}/contact` : undefined}
                 heightClass="h-[260px] sm:h-[330px] md:h-[380px] lg:h-[460px]"
                 showLanguageToggle={false}
                 useUserLocation={false}
@@ -263,6 +271,14 @@ export function HomePage({
                 fixedZoom={11}
                 className="rounded-none"
               />
+              {showMapLoadingState ? (
+                <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-slate-950/35 backdrop-blur-[1px]">
+                  <div className="flex items-center gap-3 rounded-full border border-cyan-400/35 bg-slate-950/75 px-4 py-2 text-xs font-medium text-cyan-100">
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-cyan-300/70 border-t-transparent" />
+                    Loading live air quality...
+                  </div>
+                </div>
+              ) : null}
             </div>
           )}
         />
