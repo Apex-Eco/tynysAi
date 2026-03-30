@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
 import { Navbar } from "@/components/navbar";
@@ -11,7 +10,6 @@ import HowItWorks from "@/components/how-it-works";
 import { type Locale } from "@/lib/i18n/config";
 import type { Session } from "next-auth";
 import type { MapReading } from "@/components/air-quality-map";
-import type { LatLngTuple } from "leaflet";
 import {
   AIR_QUALITY_BENCHMARKS,
   AIR_QUALITY_BENCHMARKS_SUBTITLE,
@@ -20,22 +18,6 @@ import {
 
 type LiveSensorApiResponse = {
   readings?: MapReading[];
-};
-
-type LandingAirQualityMapProps = {
-  readings: MapReading[];
-  emptyStateText: string;
-  emptyStateCtaLabel?: string;
-  emptyStateCtaHref?: string;
-  heightClass?: string;
-  className?: string;
-  showLanguageToggle?: boolean;
-  useUserLocation?: boolean;
-  showUserStatus?: boolean;
-  interactive?: boolean;
-  autoFitToData?: boolean;
-  fixedCenter?: LatLngTuple;
-  fixedZoom?: number;
 };
 
 type Dictionary = {
@@ -87,15 +69,6 @@ type Dictionary = {
   [key: string]: Record<string, string> | string | undefined;
 };
 
-const LandingAirQualityMap = dynamic<LandingAirQualityMapProps>(
-  () => import("@/components/air-quality-map").then((mod) => mod.AirQualityMap),
-  {
-    ssr: false,
-    loading: () => <div className="h-[260px] animate-pulse bg-slate-900/70 sm:h-[330px] md:h-[380px] lg:h-[460px]" />,
-  },
-);
-const ALMATY_PREVIEW_CENTER: LatLngTuple = [43.2221, 76.8512];
-
 const contributors = [
   { group: "Done by", name: "Farabi AGI Center", note: "Farabi AGI Center" },
   { group: "Done by", name: "Farabi AGI Center", note: "Farabi AGI Center" },
@@ -127,8 +100,6 @@ export function HomePage({
   session: Session | null;
 }) {
   const [mapReadings, setMapReadings] = useState<MapReading[]>([]);
-  const [isMapLoading, setIsMapLoading] = useState(true);
-  const [hasFetchedMapData, setHasFetchedMapData] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -163,10 +134,6 @@ export function HomePage({
       } catch (error) {
         if (!isActive) return;
         console.error("Failed to fetch live map readings:", error);
-      } finally {
-        if (!isActive) return;
-        setIsMapLoading(false);
-        setHasFetchedMapData(true);
       }
     };
 
@@ -210,11 +177,6 @@ export function HomePage({
       });
   }, [mapReadings]);
 
-  const heroEmptyText = "No device connected yet. Connect a device to see live air quality data.";
-  const heroEmptyCta = "Contact setup support";
-  const showMapLoadingState = isMapLoading && !hasFetchedMapData;
-  const showMapEmptyState = !isMapLoading && hasFetchedMapData && mapReadings.length === 0;
-
   return (
     <div className="relative overflow-x-hidden bg-[#02050d] text-zinc-100">
       <div className="pointer-events-none absolute inset-0" aria-hidden>
@@ -254,33 +216,6 @@ export function HomePage({
         <HeroSection
           session={session}
           dict={{ hero: dict.hero }}
-          mapPreview={(
-            <div className="relative overflow-hidden rounded-2xl border border-slate-800/80">
-              <LandingAirQualityMap
-                readings={mapReadings}
-                emptyStateText={showMapEmptyState ? heroEmptyText : ""}
-                emptyStateCtaLabel={showMapEmptyState ? heroEmptyCta : undefined}
-                emptyStateCtaHref={showMapEmptyState ? `/${lang}/contact` : undefined}
-                heightClass="h-[260px] sm:h-[330px] md:h-[380px] lg:h-[460px]"
-                showLanguageToggle={false}
-                useUserLocation={false}
-                showUserStatus={false}
-                interactive={false}
-                autoFitToData={false}
-                fixedCenter={ALMATY_PREVIEW_CENTER}
-                fixedZoom={11}
-                className="rounded-none"
-              />
-              {showMapLoadingState ? (
-                <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-slate-950/35 backdrop-blur-[1px]">
-                  <div className="flex items-center gap-3 rounded-full border border-cyan-400/35 bg-slate-950/75 px-4 py-2 text-xs font-medium text-cyan-100">
-                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-cyan-300/70 border-t-transparent" />
-                    Loading live air quality...
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          )}
         />
 
         <HowItWorks dict={dict} />

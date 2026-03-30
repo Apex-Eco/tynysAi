@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import type { ReactNode } from "react";
 import type { Session } from "next-auth";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,7 +17,6 @@ import { Textarea } from "@/components/ui/textarea";
 
 type HeroSectionProps = {
   session: Session | null;
-  mapPreview?: ReactNode;
   dict: {
     hero: {
       badge: string;
@@ -31,7 +30,7 @@ type HeroSectionProps = {
   };
 };
 
-export function HeroSection({ session, dict, mapPreview }: HeroSectionProps) {
+export function HeroSection({ session, dict }: HeroSectionProps) {
   const [isDemoOpen, setIsDemoOpen] = useState(false);
   const [demoMessage, setDemoMessage] = useState("");
 
@@ -129,7 +128,17 @@ export function HeroSection({ session, dict, mapPreview }: HeroSectionProps) {
           transition={{ duration: 0.6, delay: 0.12 }}
           className="rounded-3xl border border-slate-700 bg-slate-950 p-2 shadow-2xl"
         >
-          {mapPreview}
+          <div className="relative h-[260px] overflow-hidden rounded-2xl sm:h-[330px] md:h-[380px] lg:h-[460px]">
+            <Image
+              src="/herosection.jpg"
+              alt="Tynys AI air quality map — Almaty"
+              fill
+              priority
+              sizes="(min-width: 1024px) 50vw, 100vw"
+              className="object-cover"
+            />
+            <div className="absolute inset-0 bg-black/20" />
+          </div>
         </motion.div>
       </div>
 
