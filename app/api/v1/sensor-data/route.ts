@@ -72,6 +72,12 @@ const CENTRAL_DATA_BASE_URL = (process.env.CENTRAL_DATA_BASE_URL ?? 'http://data
 const DEVICE_COORDINATE_FALLBACKS: Record<string, { latitude: number; longitude: number }> = {
   lab01: { latitude: 43.2221, longitude: 76.8512 },
 };
+const LOCAL_MOCK_DEVICES = [
+  { id: 'dev-bus-01', latitude: 43.2383, longitude: 76.8897, site: 'Almaty Center Bus Hub' },
+  { id: 'dev-bus-02', latitude: 43.2148, longitude: 76.8532, site: 'Abay Station Corridor' },
+  { id: 'dev-bus-03', latitude: 43.1965, longitude: 76.9278, site: 'Airport Route Segment' },
+] as const;
+const NETWORK_ERROR_CODES = new Set(['EAI_AGAIN', 'ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EHOSTUNREACH']);
 
 function toIsoTimestamp(value: unknown): string {
   const fallback = new Date().toISOString();
@@ -88,6 +94,112 @@ function toCoordinate(value: unknown): number | null {
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
+}
+
+function readErrorCode(errorLike: unknown): string | null {
+  if (typeof errorLike !== 'object' || errorLike === null) {
+    return null;
+  }
+  const code = (errorLike as { code?: unknown }).code;
+  if (typeof code !== 'string' || code.trim() === '') {
+    return null;
+  }
+  return code.trim().toUpperCase();
+}
+
+function isCentralNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const directCode = readErrorCode(error);
+  const causeCode = readErrorCode((error as Error & { cause?: unknown }).cause);
+  const code = directCode ?? causeCode;
+  if (code && NETWORK_ERROR_CODES.has(code)) {
+    return true;
+  }
+
+  const message = error.message.toLowerCase();
+  return (
+    message.includes('fetch failed')
+    || message.includes('network')
+    || message.includes('getaddrinfo')
+    || message.includes('eai_again')
+    || message.includes('enotfound')
+  );
+}
+
+function randomNumber(min: number, max: number, precision = 1): number {
+  const value = min + Math.random() * (max - min);
+  return Number(value.toFixed(precision));
+}
+
+function buildMockSnapshot(deviceId: string | null): { devices: ApiDevice[]; readings: ApiReading[] } {
+  const now = new Date();
+  const nowIso = now.toISOString();
+
+  const baseDevices: Array<{ id: string; latitude: number; longitude: number; site: string }> = LOCAL_MOCK_DEVICES.map((item) => ({
+    id: item.id,
+    latitude: item.latitude,
+    longitude: item.longitude,
+    site: item.site,
+  }));
+  let selectedDevices = baseDevices.filter((item) => !deviceId || item.id === deviceId);
+  if (selectedDevices.length === 0 && deviceId) {
+    selectedDevices = [{
+      id: deviceId,
+      latitude: 43.2221,
+      longitude: 76.8512,
+      site: 'Almaty Local Dev Device',
+    }];
+  }
+
+  const devices: ApiDevice[] = selectedDevices.map((item) => ({
+    id: item.id,
+    name: item.site,
+    latitude: item.latitude,
+    longitude: item.longitude,
+    status: 'online',
+    lastSeenAt: nowIso,
+  }));
+
+  const readings: ApiReading[] = selectedDevices.map((item) => {
+    const pm1 = randomNumber(6, 20);
+    const pm25 = randomNumber(10, 45);
+    const pm10 = randomNumber(16, 65);
+    const co2 = randomNumber(430, 1050, 0);
+    const voc = randomNumber(0.08, 1.05, 3);
+    const temperatureC = randomNumber(18, 30);
+    const humidityPct = randomNumber(30, 68);
+    const ch2o = randomNumber(0.01, 0.07, 3);
+    const co = randomNumber(0.03, 1.4, 3);
+    const o3 = randomNumber(8, 58);
+    const no2 = randomNumber(5, 40);
+
+    return {
+      sensorId: item.id,
+      location: `${item.latitude},${item.longitude}`,
+      value: pm25,
+      timestamp: nowIso,
+      transportType: null,
+      ingestedAt: nowIso,
+      mainReadings: {
+        pm1,
+        pm25,
+        pm10,
+        co2,
+        voc,
+        temperatureC,
+        humidityPct,
+        ch2o,
+        co,
+        o3,
+        no2,
+      },
+    };
+  });
+
+  return { devices, readings };
 }
 
 function mapReadingMetrics(reading: Record<string, unknown>) {
@@ -311,10 +423,21 @@ export async function GET(request: NextRequest) {
     const devicesUrl = new URL(`${CENTRAL_DATA_BASE_URL}/devices`);
     devicesUrl.searchParams.set('limit', String(Math.max(limit, 200)));
 
-    const [rawReadings, rawDevices] = await Promise.all([
-      fetchCentralJson<CentralReading[]>(readingsUrl.toString()),
-      fetchCentralJson<CentralDevice[]>(devicesUrl.toString()),
-    ]);
+    let rawReadings: CentralReading[];
+    let rawDevices: CentralDevice[];
+    try {
+      [rawReadings, rawDevices] = await Promise.all([
+        fetchCentralJson<CentralReading[]>(readingsUrl.toString()),
+        fetchCentralJson<CentralDevice[]>(devicesUrl.toString()),
+      ]);
+    } catch (error) {
+      if (isCentralNetworkError(error)) {
+        console.warn('Central sensor server unreachable. Returning mock snapshot for local development.', error);
+        const mockPayload = buildMockSnapshot(deviceId);
+        return NextResponse.json(mockPayload);
+      }
+      throw error;
+    }
 
     const safeReadings = Array.isArray(rawReadings) ? rawReadings : [];
     const safeDevices = Array.isArray(rawDevices) ? rawDevices : [];
