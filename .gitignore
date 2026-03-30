@@ -91,3 +91,4 @@ e2e/.auth/
 
 # Local assistant / Copilot instructions (should not be committed)
 .github/copilot-instructions.md
+.codex
