@@ -373,16 +373,19 @@ function FitToMarkers({
   useUserLocation,
   routeDestination,
   routeGeometry,
+  disabled = false,
 }: {
   points: AggregatedPoint[];
   userLocation: LatLngTuple | null;
   useUserLocation: boolean;
   routeDestination: LatLngTuple | null;
   routeGeometry: LatLngTuple[] | null;
+  disabled?: boolean;
 }) {
   const map = useMap();
 
   useEffect(() => {
+    if (disabled) return;
     if (!map) return;
 
     if (routeGeometry && routeGeometry.length > 1) {
@@ -407,7 +410,7 @@ function FitToMarkers({
 
     const bounds = L.latLngBounds(coords);
     map.fitBounds(bounds, { padding: [24, 24], maxZoom: useUserLocation ? 13 : 12 });
-  }, [map, points, routeDestination, routeGeometry, userLocation, useUserLocation]);
+  }, [disabled, map, points, routeDestination, routeGeometry, userLocation, useUserLocation]);
 
   return null;
 }
@@ -425,6 +428,10 @@ export function AirQualityMap({
   showUserStatus = false,
   showUserStatusAsPopover = false,
   routeDestination = null,
+  interactive = true,
+  autoFitToData = true,
+  fixedCenter,
+  fixedZoom,
 }: {
   readings: MapReading[];
   emptyStateText: string;
@@ -439,6 +446,10 @@ export function AirQualityMap({
   showUserStatus?: boolean;
   showUserStatusAsPopover?: boolean;
   routeDestination?: LatLngTuple | null;
+  interactive?: boolean;
+  autoFitToData?: boolean;
+  fixedCenter?: LatLngTuple;
+  fixedZoom?: number;
 }) {
   const pathname = usePathname();
   const pathnameLocale = (pathname?.split("/")[1] ?? "en") as "en" | "ru" | "kz";
@@ -849,12 +860,15 @@ export function AirQualityMap({
 
         <div className="relative flex-1 overflow-hidden rounded-lg">
           <MapContainer
-            center={center}
-            zoom={6}
-            scrollWheelZoom={true}
-            touchZoom={true}
-            dragging={true}
-            zoomControl={true}
+            center={fixedCenter ?? center}
+            zoom={fixedZoom ?? 6}
+            scrollWheelZoom={interactive}
+            touchZoom={interactive}
+            dragging={interactive}
+            zoomControl={interactive}
+            doubleClickZoom={interactive}
+            boxZoom={interactive}
+            keyboard={interactive}
             preferCanvas
             fadeAnimation={false}
             zoomAnimation={false}
@@ -871,6 +885,7 @@ export function AirQualityMap({
               useUserLocation={useUserLocation}
               routeDestination={routeDestination}
               routeGeometry={routeGeometry}
+              disabled={!autoFitToData}
             />
 
             {routeGeometry && routeGeometry.length > 1 ? (

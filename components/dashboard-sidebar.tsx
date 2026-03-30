@@ -61,6 +61,7 @@ export function DashboardSidebar({ children }: DashboardSidebarProps) {
   const currentLocale = pathname?.split("/")[1] ?? "";
   const locale = (i18n.locales as readonly string[]).includes(currentLocale) ? currentLocale : i18n.defaultLocale;
   const profileLink = `/${locale}/dashboard`;
+  const settingsLink = `/${locale}/dashboard/settings`;
   const helpLink = `/${locale}/request-demo`;
 
   const accountInitials = (() => {
@@ -248,9 +249,11 @@ export function DashboardSidebar({ children }: DashboardSidebarProps) {
                 <span>Profile</span>
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem disabled className="text-slate-400">
-              <Settings className="mr-2 h-4 w-4" />
-              <span>Account settings (soon)</span>
+            <DropdownMenuItem asChild>
+              <Link href={settingsLink} className="cursor-pointer text-slate-100">
+                <Settings className="mr-2 h-4 w-4" />
+                <span>Account Settings</span>
+              </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link href={helpLink} className="cursor-pointer text-slate-100">

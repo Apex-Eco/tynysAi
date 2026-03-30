@@ -153,6 +153,7 @@ const DASHBOARD_UI_TEXT: Record<
     routeChooseGo: string;
     routeDistance: string;
     routeAqi: string;
+    routeDirections: string;
   }
 > = {
   en: {
@@ -200,6 +201,7 @@ const DASHBOARD_UI_TEXT: Record<
     routeChooseGo: "Choose & Go",
     routeDistance: "Distance",
     routeAqi: "AQI",
+    routeDirections: "Get Directions",
   },
   ru: {
     filters: "Фильтры",
@@ -246,6 +248,7 @@ const DASHBOARD_UI_TEXT: Record<
     routeChooseGo: "Выбрать и ехать",
     routeDistance: "Расстояние",
     routeAqi: "AQI",
+    routeDirections: "Маршрут в Google Maps",
   },
   kz: {
     filters: "Сүзгілер",
@@ -292,6 +295,7 @@ const DASHBOARD_UI_TEXT: Record<
     routeChooseGo: "Таңдап бару",
     routeDistance: "Қашықтық",
     routeAqi: "AQI",
+    routeDirections: "Google Maps арқылы өту",
   },
 };
 
@@ -328,6 +332,7 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
   const [routeOptions, setRouteOptions] = useState<GoodAirOption[]>([]);
   const [isRouteOptionsLoading, setIsRouteOptionsLoading] = useState(false);
   const [routeOptionsError, setRouteOptionsError] = useState<string | null>(null);
+  const [routeOptionsMessage, setRouteOptionsMessage] = useState<string | null>(null);
   const [activeRouteDestination, setActiveRouteDestination] = useState<[number, number] | null>(null);
   const [activeRouteOptionId, setActiveRouteOptionId] = useState<string | null>(null);
   const [isExportingReport, setIsExportingReport] = useState(false);
@@ -631,12 +636,14 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
       console.error("[RouteDebug] loadRouteOptions:no-geolocation");
       setRouteOptions([]);
       setRouteOptionsError(ui.routeLoadError);
+      setRouteOptionsMessage(null);
       setIsRouteOptionsLoading(false);
       return;
     }
 
     setIsRouteOptionsLoading(true);
     setRouteOptionsError(null);
+    setRouteOptionsMessage(null);
 
     navigator.geolocation.getCurrentPosition(
       async (position) => {
@@ -676,6 +683,7 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
           });
 
           setRouteOptions(options);
+          setRouteOptionsMessage(payload.message ?? null);
           setRouteOptionsError(options.length > 0 ? null : (payload.message ?? ui.routeNoOptions));
         } catch (error) {
           console.error("Failed to load clean-air route options:", error);
@@ -684,6 +692,7 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
           });
           setRouteOptions([]);
           setRouteOptionsError(ui.routeLoadError);
+          setRouteOptionsMessage(null);
         } finally {
           setIsRouteOptionsLoading(false);
         }
@@ -695,6 +704,7 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
         });
         setRouteOptions([]);
         setRouteOptionsError(ui.routeLoadError);
+        setRouteOptionsMessage(null);
         setIsRouteOptionsLoading(false);
       },
       GEOLOCATION_OPTIONS,
@@ -1034,6 +1044,10 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
     </div>
   );
 
+  const isBestAvailableOnly =
+    routeOptions.length === 1
+    && (routeOptionsMessage?.trim().toLowerCase() ?? "") === "best available air nearby";
+
   const routeDialogBody = (
     <div className="space-y-3">
       {isRouteOptionsLoading ? (
@@ -1053,15 +1067,23 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
         <p className="text-sm text-slate-300">{ui.routeNoOptions}</p>
       ) : null}
 
+      {!isRouteOptionsLoading && routeOptions.length > 0 && isBestAvailableOnly && routeOptionsMessage ? (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+          {routeOptionsMessage}
+        </div>
+      ) : null}
+
       {!isRouteOptionsLoading && routeOptions.length > 0 ? (
         <div className="max-h-[52dvh] space-y-2 overflow-y-auto pr-1">
           {routeOptions.map((option) => {
             const isActive = activeRouteOptionId === option.id;
+            const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${option.latitude},${option.longitude}`;
             return (
               <div
                 key={option.id}
                 className={cn(
-                  "rounded-xl border border-slate-700 bg-slate-900 p-3",
+                  "rounded-xl border bg-slate-900 p-3",
+                  isBestAvailableOnly ? "border-amber-500/50 bg-amber-500/10" : "border-slate-700",
                   isActive ? "border-blue-500/70" : undefined,
                 )}
               >
@@ -1072,6 +1094,14 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
                 <p className="text-xs text-slate-300">
                   {ui.routeAqi}: {Math.round(option.aqi)}
                 </p>
+                <a
+                  href={directionsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-flex h-8 w-full items-center justify-center rounded-md border border-cyan-500/50 bg-cyan-500/10 px-3 text-xs font-medium text-cyan-200 transition hover:bg-cyan-500/20"
+                >
+                  {ui.routeDirections}
+                </a>
                 <Button className="mt-3 h-8 w-full" onClick={() => handleChooseRouteDestination(option)}>
                   {ui.routeChooseGo}
                 </Button>

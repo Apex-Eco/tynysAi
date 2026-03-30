@@ -2,15 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
 import { Navbar } from "@/components/navbar";
 import { HeroSection } from "@/components/HeroSection";
 import HowItWorks from "@/components/how-it-works";
-import { DashboardMapPanel } from "./dashboard/map-panel-client";
 import { type Locale } from "@/lib/i18n/config";
 import type { Session } from "next-auth";
 import type { MapReading } from "@/components/air-quality-map";
+import type { LatLngTuple } from "leaflet";
 import {
   AIR_QUALITY_BENCHMARKS,
   AIR_QUALITY_BENCHMARKS_SUBTITLE,
@@ -19,6 +20,22 @@ import {
 
 type LiveSensorApiResponse = {
   readings?: MapReading[];
+};
+
+type LandingAirQualityMapProps = {
+  readings: MapReading[];
+  emptyStateText: string;
+  emptyStateCtaLabel?: string;
+  emptyStateCtaHref?: string;
+  heightClass?: string;
+  className?: string;
+  showLanguageToggle?: boolean;
+  useUserLocation?: boolean;
+  showUserStatus?: boolean;
+  interactive?: boolean;
+  autoFitToData?: boolean;
+  fixedCenter?: LatLngTuple;
+  fixedZoom?: number;
 };
 
 type Dictionary = {
@@ -70,6 +87,15 @@ type Dictionary = {
   [key: string]: Record<string, string> | string | undefined;
 };
 
+const LandingAirQualityMap = dynamic<LandingAirQualityMapProps>(
+  () => import("@/components/air-quality-map").then((mod) => mod.AirQualityMap),
+  {
+    ssr: false,
+    loading: () => <div className="h-[260px] animate-pulse bg-slate-900/70 sm:h-[330px] md:h-[380px] lg:h-[460px]" />,
+  },
+);
+const ALMATY_PREVIEW_CENTER: LatLngTuple = [43.2221, 76.8512];
+
 const contributors = [
   { group: "Done by", name: "Farabi AGI Center", note: "Farabi AGI Center" },
   { group: "Done by", name: "Farabi AGI Center", note: "Farabi AGI Center" },
@@ -106,11 +132,11 @@ export function HomePage({
     if (typeof window === "undefined") return;
 
     let isActive = true;
-    const pollMs = 5000;
+    const pollMs = 10000;
 
     const fetchLiveReadings = async () => {
       try {
-        const response = await fetch("/api/v1/sensor-data?public=1&latest=true&limit=100", {
+        const response = await fetch("/api/v1/sensor-data?public=1&latest=true", {
           method: "GET",
           cache: "no-store",
         });
@@ -222,21 +248,19 @@ export function HomePage({
           dict={{ hero: dict.hero }}
           mapPreview={(
             <div className="overflow-hidden rounded-2xl border border-slate-800/80">
-              <DashboardMapPanel
+              <LandingAirQualityMap
                 readings={mapReadings}
-                emptyMapText={heroEmptyText}
-                emptyMapCtaLabel={heroEmptyCta}
-                emptyMapCtaHref={`/${lang}/contact`}
-                recentActivity={[]}
-                feedTitle="Live Air Quality Feed"
-                feedEmptyText={heroEmptyText}
-                mapHeightClass="h-[260px] sm:h-[330px] md:h-[380px] lg:h-[460px]"
-                showFeedOverlay={false}
-                minimalMode
-                showLegend={false}
+                emptyStateText={heroEmptyText}
+                emptyStateCtaLabel={heroEmptyCta}
+                emptyStateCtaHref={`/${lang}/contact`}
+                heightClass="h-[260px] sm:h-[330px] md:h-[380px] lg:h-[460px]"
                 showLanguageToggle={false}
                 useUserLocation={false}
                 showUserStatus={false}
+                interactive={false}
+                autoFitToData={false}
+                fixedCenter={ALMATY_PREVIEW_CENTER}
+                fixedZoom={11}
                 className="rounded-none"
               />
             </div>
@@ -244,36 +268,6 @@ export function HomePage({
         />
 
         <HowItWorks dict={dict} />
-
-        <section className="relative z-20 px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
-          <div className="mx-auto max-w-7xl rounded-3xl border border-cyan-400/20 bg-slate-900/60 p-5 md:p-6">
-            <div className="grid gap-5 md:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] md:items-center">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-cyan-300">
-                  {dict.crossPlatform?.badge ?? "Cross platform"}
-                </p>
-                <h3 className="mt-1 text-xl font-semibold text-zinc-100 md:text-2xl">
-                  {dict.crossPlatform?.title ?? "Works across most devices"}
-                </h3>
-                <p className="mt-2 max-w-3xl text-sm text-slate-300">
-                  {dict.crossPlatform?.description
-                    ?? "Monitor routes on desktop, review trends on tablet, and check quick updates on mobile."}
-                </p>
-              </div>
-              <div className="overflow-hidden rounded-2xl border border-slate-800/80 bg-slate-950/60">
-                <div className="relative h-[210px] sm:h-[240px]">
-                  <Image
-                    src="/media/mobile-cross-platform-placeholder.svg"
-                    alt="Phone dashboard preview"
-                    fill
-                    sizes="(max-width: 768px) 100vw, 40vw"
-                    className="object-cover"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
 
         <section className="relative z-20 px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
           <div className="mx-auto max-w-7xl rounded-3xl border border-cyan-400/20 bg-slate-900/60 p-5 md:p-6">
