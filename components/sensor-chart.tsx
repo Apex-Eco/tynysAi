@@ -2,8 +2,8 @@
 
 import { useMemo, type ReactNode } from "react";
 import {
-  Bar,
-  BarChart,
+  Area,
+  AreaChart,
   CartesianGrid,
   Legend,
   ResponsiveContainer,
@@ -186,10 +186,9 @@ export function SensorChart({ data, actionSlot }: SensorChartProps) {
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={380}>
-              <BarChart
+              <AreaChart
                 data={chartData}
                 margin={{ top: 12, right: 24, left: 12, bottom: 12 }}
-                barGap={4}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis
@@ -222,14 +221,17 @@ export function SensorChart({ data, actionSlot }: SensorChartProps) {
                 />
                 <Tooltip content={<SensorBarTooltip />} cursor={{ fill: "hsl(var(--muted) / 0.35)" }} />
                 <Legend />
-                <Bar
+                <Area
+                  type="monotone"
                   dataKey="value"
                   name="Sensor Value"
                   fill="hsl(var(--chart-1))"
-                  radius={[4, 4, 0, 0]}
-                  maxBarSize={32}
+                  fillOpacity={0.25}
+                  stroke="hsl(var(--chart-1))"
+                  strokeWidth={2}
+                  activeDot={{ r: 4 }}
                 />
-              </BarChart>
+              </AreaChart>
             </ResponsiveContainer>
           )}
         </CardContent>

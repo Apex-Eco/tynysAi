@@ -408,7 +408,7 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
               transportType: typeof reading.transportType === 'string' ? reading.transportType : null,
               ingestedAt:
                 typeof reading.ingestedAt === 'string'
-                || reading.ingestedAt instanceof Date
+                  || reading.ingestedAt instanceof Date
                   ? reading.ingestedAt
                   : undefined,
             });
@@ -500,9 +500,9 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
     const uniqueSensors = new Set(filteredReadings.map((r) => r.sensorId));
     const avgSensorValue = filteredReadings.length
       ? (
-          filteredReadings.reduce((sum, r) => sum + r.value, 0) /
-          filteredReadings.length
-        ).toFixed(2)
+        filteredReadings.reduce((sum, r) => sum + r.value, 0) /
+        filteredReadings.length
+      ).toFixed(2)
       : "0.00";
 
     return {
@@ -675,10 +675,10 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
             count: options.length,
             first: options[0]
               ? {
-                  id: options[0].id,
-                  label: options[0].label,
-                  distanceKm: options[0].distanceKm,
-                }
+                id: options[0].id,
+                label: options[0].label,
+                distanceKm: options[0].distanceKm,
+              }
               : null,
           });
 
@@ -979,7 +979,7 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
         <SensorChart data={filteredReadings} />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6">
         <Card className="border-0 shadow-lg">
           <CardHeader>
             <CardTitle>{dict.sensorStatistics}</CardTitle>
@@ -1494,7 +1494,7 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
       </div>
 
       <Dialog open={isAnalyticsDialogOpen} onOpenChange={setIsAnalyticsDialogOpen}>
-        <DialogContent className="flex max-h-[90dvh] w-[calc(100vw-2rem)] flex-col overflow-hidden border-slate-700 bg-slate-950 p-0 sm:max-w-3xl">
+        <DialogContent className="flex max-h-[90dvh] w-[calc(100vw-2rem)] flex-col overflow-hidden border-slate-700 bg-slate-950 p-0 sm:max-w-[calc(100vw-3rem)]">
           <DialogHeader className="shrink-0 border-b border-border/60 px-5 py-4">
             <DialogTitle className="font-mono text-lg">{ui.historicalTrends}</DialogTitle>
           </DialogHeader>

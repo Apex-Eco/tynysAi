@@ -373,6 +373,7 @@ function FitToMarkers({
   useUserLocation,
   routeDestination,
   routeGeometry,
+  fitRequestKey,
   disabled = false,
 }: {
   points: AggregatedPoint[];
@@ -380,13 +381,18 @@ function FitToMarkers({
   useUserLocation: boolean;
   routeDestination: LatLngTuple | null;
   routeGeometry: LatLngTuple[] | null;
+  fitRequestKey: string;
   disabled?: boolean;
 }) {
   const map = useMap();
+  const lastAppliedFitRequestRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (disabled) return;
     if (!map) return;
+    if (lastAppliedFitRequestRef.current === fitRequestKey) return;
+
+    lastAppliedFitRequestRef.current = fitRequestKey;
 
     if (routeGeometry && routeGeometry.length > 1) {
       const bounds = L.latLngBounds(routeGeometry);
@@ -410,7 +416,7 @@ function FitToMarkers({
 
     const bounds = L.latLngBounds(coords);
     map.fitBounds(bounds, { padding: [24, 24], maxZoom: useUserLocation ? 13 : 12 });
-  }, [disabled, map, points, routeDestination, routeGeometry, userLocation, useUserLocation]);
+  }, [disabled, fitRequestKey, map, points, routeDestination, routeGeometry, userLocation, useUserLocation]);
 
   return null;
 }
@@ -482,6 +488,15 @@ export function AirQualityMap({
     requestAt: 0,
   });
   const latestRouteRequestIdRef = useRef(0);
+  const fitRequestKey = useMemo(() => {
+    const recenterKey = recenterRequestId ?? 0;
+    const destinationKey = routeDestination
+      ? `${routeDestination[0].toFixed(6)},${routeDestination[1].toFixed(6)}`
+      : "none";
+    const routeGeometryKey = routeGeometry ? `route:${routeGeometry.length}` : "route:0";
+
+    return `${recenterKey}:${destinationKey}:${routeGeometryKey}`;
+  }, [recenterRequestId, routeDestination, routeGeometry]);
 
   const center = useMemo<LatLngTuple>(() => {
     if (points.length === 0) return DEFAULT_CENTER;
@@ -737,9 +752,9 @@ export function AirQualityMap({
         ? routeError
         : routeDestination && isRouting
           ? text.routing
-      : nearestAqi
-        ? `${Math.round(nearestAqi.value)} · ${nearestAqi.label} · ${nearestAqi.distanceKm.toFixed(1)} ${text.kmAway}`
-        : "-";
+          : nearestAqi
+            ? `${Math.round(nearestAqi.value)} · ${nearestAqi.label} · ${nearestAqi.distanceKm.toFixed(1)} ${text.kmAway}`
+            : "-";
   const locationWarningText = useMemo(() => {
     if (!useUserLocation || isLocating || !userLocation) return null;
     if (typeof userLocationAccuracyMeters === "number" && userLocationAccuracyMeters > 1000) {
@@ -885,6 +900,7 @@ export function AirQualityMap({
               useUserLocation={useUserLocation}
               routeDestination={routeDestination}
               routeGeometry={routeGeometry}
+              fitRequestKey={fitRequestKey}
               disabled={!autoFitToData}
             />
 
