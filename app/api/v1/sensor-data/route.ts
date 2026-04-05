@@ -10,6 +10,9 @@ import {
   findOrCreateSite,
   checkDuplicateReading
 } from '@/lib/sensor-data-access';
+import { db } from '@/lib/db';
+import { sensorReadings, sensors } from '@/lib/db/schema';
+import { desc, eq, isNull } from 'drizzle-orm';
 import { isValidAlmatyCoordinate } from '@/lib/geo';
 
 export const dynamic = 'force-dynamic';
@@ -72,6 +75,8 @@ const CENTRAL_DATA_BASE_URL = (process.env.CENTRAL_DATA_BASE_URL ?? 'http://data
 const DEVICE_COORDINATE_FALLBACKS: Record<string, { latitude: number; longitude: number }> = {
   lab01: { latitude: 43.2221, longitude: 76.8512 },
 };
+const ENABLE_SENSOR_MOCK_FALLBACK = process.env.ENABLE_SENSOR_MOCK_FALLBACK === 'true';
+const DEFAULT_ACTIVE_SENSOR_WINDOW_MINUTES = Number(process.env.ACTIVE_SENSOR_WINDOW_MINUTES ?? '1');
 const LOCAL_MOCK_DEVICES = [
   { id: 'dev-bus-01', latitude: 43.2383, longitude: 76.8897, site: 'Almaty Center Bus Hub' },
   { id: 'dev-bus-02', latitude: 43.2148, longitude: 76.8532, site: 'Abay Station Corridor' },
@@ -94,6 +99,13 @@ function toCoordinate(value: unknown): number | null {
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
+}
+
+function normalizeDeviceId(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  if (normalized === '') return null;
+  return normalized;
 }
 
 function readErrorCode(errorLike: unknown): string | null {
@@ -202,6 +214,193 @@ function buildMockSnapshot(deviceId: string | null): { devices: ApiDevice[]; rea
   return { devices, readings };
 }
 
+function parseLocationCoordinates(location: unknown): { latitude: number; longitude: number } | null {
+  if (typeof location !== 'string') return null;
+  const [latRaw, lngRaw] = location.split(',').map((part) => part.trim());
+  if (!latRaw || !lngRaw) return null;
+  const latitude = toCoordinate(latRaw);
+  const longitude = toCoordinate(lngRaw);
+  if (latitude === null || longitude === null) return null;
+  if (!isValidAlmatyCoordinate(latitude, longitude)) return null;
+  return { latitude, longitude };
+}
+
+type FallbackDbReading = {
+  deviceId: string | null;
+  timestamp: Date | string;
+  pm1: number | null;
+  pm25: number | null;
+  pm10: number | null;
+  co2: number | null;
+  voc: number | null;
+  ch2o: number | null;
+  co: number | null;
+  o3: number | null;
+  no2: number | null;
+  temperature: number | null;
+  humidity: number | null;
+  value: number | null;
+  location: string | null;
+  latitude: number | null;
+  longitude: number | null;
+};
+
+async function getFallbackDbReadings(limit: number, publicOnly: boolean): Promise<FallbackDbReading[]> {
+  const query = db
+    .select({
+      deviceId: sensors.deviceId,
+      timestamp: sensorReadings.timestamp,
+      pm1: sensorReadings.pm1,
+      pm25: sensorReadings.pm25,
+      pm10: sensorReadings.pm10,
+      co2: sensorReadings.co2,
+      voc: sensorReadings.voc,
+      ch2o: sensorReadings.ch2o,
+      co: sensorReadings.co,
+      o3: sensorReadings.o3,
+      no2: sensorReadings.no2,
+      temperature: sensorReadings.temperature,
+      humidity: sensorReadings.humidity,
+      value: sensorReadings.value,
+      location: sensorReadings.location,
+      latitude: sensors.latitude,
+      longitude: sensors.longitude,
+    })
+    .from(sensorReadings)
+    .leftJoin(sensors, eq(sensorReadings.sensorId, sensors.id))
+    .orderBy(desc(sensorReadings.timestamp))
+    .limit(limit);
+
+  if (publicOnly) {
+    return query.where(isNull(sensorReadings.userId));
+  }
+
+  return query;
+}
+
+function buildDbSnapshot(
+  dbReadings: FallbackDbReading[],
+  deviceId: string | null,
+): { devices: ApiDevice[]; readings: ApiReading[] } {
+  const requestedDeviceId = normalizeDeviceId(deviceId);
+  const normalizedReadings: ApiReading[] = [];
+
+  for (const row of dbReadings) {
+    const sensorId = normalizeDeviceId(row.deviceId);
+    if (!sensorId) continue;
+    if (requestedDeviceId && sensorId !== requestedDeviceId) continue;
+
+    const coordsFromSensor =
+      typeof row.latitude === 'number'
+      && Number.isFinite(row.latitude)
+      && typeof row.longitude === 'number'
+      && Number.isFinite(row.longitude)
+      && isValidAlmatyCoordinate(row.latitude, row.longitude)
+        ? { latitude: row.latitude, longitude: row.longitude }
+        : null;
+
+    const coords = coordsFromSensor ?? parseLocationCoordinates(row.location);
+    if (!coords) continue;
+
+    const timestamp = toIsoTimestamp(row.timestamp);
+    const value =
+      typeof row.value === 'number' && Number.isFinite(row.value)
+        ? row.value
+        : typeof row.pm25 === 'number' && Number.isFinite(row.pm25)
+          ? row.pm25
+          : typeof row.pm10 === 'number' && Number.isFinite(row.pm10)
+            ? row.pm10
+            : typeof row.co2 === 'number' && Number.isFinite(row.co2)
+              ? row.co2
+              : 0;
+
+    normalizedReadings.push({
+      sensorId,
+      location: `${coords.latitude},${coords.longitude}`,
+      value,
+      timestamp,
+      transportType: null,
+      ingestedAt: timestamp,
+      mainReadings: {
+        pm1: row.pm1 ?? undefined,
+        pm25: row.pm25 ?? undefined,
+        pm10: row.pm10 ?? undefined,
+        co2: row.co2 ?? undefined,
+        voc: row.voc ?? undefined,
+        temperatureC: row.temperature ?? undefined,
+        humidityPct: row.humidity ?? undefined,
+        ch2o: row.ch2o ?? undefined,
+        co: row.co ?? undefined,
+        o3: row.o3 ?? undefined,
+        no2: row.no2 ?? undefined,
+      },
+    });
+  }
+
+  const dedupReadings = new Map<string, ApiReading>();
+  for (const reading of normalizedReadings) {
+    const key = `${reading.sensorId}|${reading.timestamp}|${reading.location}`;
+    if (!dedupReadings.has(key)) {
+      dedupReadings.set(key, reading);
+    }
+  }
+
+  const readings = Array.from(dedupReadings.values()).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+  const devicesById = new Map<string, { latitude: number; longitude: number; lastSeenAt: string }>();
+  for (const reading of readings) {
+    const coords = parseLocationCoordinates(reading.location);
+    if (!coords) continue;
+    const existing = devicesById.get(reading.sensorId);
+    if (!existing || reading.timestamp > existing.lastSeenAt) {
+      devicesById.set(reading.sensorId, {
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        lastSeenAt: reading.timestamp,
+      });
+    }
+  }
+
+  const devices: ApiDevice[] = Array.from(devicesById.entries()).map(([id, device]) => ({
+    id,
+    name: id,
+    latitude: device.latitude,
+    longitude: device.longitude,
+    status: deriveStatus(new Date(device.lastSeenAt)),
+    lastSeenAt: new Date(device.lastSeenAt).toISOString(),
+  }));
+
+  return { devices, readings };
+}
+
+function filterSnapshotByFreshness(
+  snapshot: { devices: ApiDevice[]; readings: ApiReading[] },
+  freshnessMinutes: number,
+): { devices: ApiDevice[]; readings: ApiReading[] } {
+  const safeWindowMinutes = Number.isFinite(freshnessMinutes) && freshnessMinutes > 0
+    ? Math.floor(freshnessMinutes)
+    : 30;
+  const cutoffMs = Date.now() - safeWindowMinutes * 60 * 1000;
+
+  const freshReadings = snapshot.readings.filter((reading) => {
+    const ts = new Date(reading.timestamp).getTime();
+    return Number.isFinite(ts) && ts >= cutoffMs;
+  });
+
+  const freshDeviceIds = new Set(freshReadings.map((reading) => reading.sensorId));
+
+  const freshDevices = snapshot.devices.filter((device) => {
+    const lastSeenMs = new Date(device.lastSeenAt).getTime();
+    if (Number.isFinite(lastSeenMs) && lastSeenMs >= cutoffMs) return true;
+    return freshDeviceIds.has(device.id);
+  });
+
+  return {
+    devices: freshDevices,
+    readings: freshReadings,
+  };
+}
+
 function mapReadingMetrics(reading: Record<string, unknown>) {
   const normalized = normalizeReadingFields(reading);
   return {
@@ -237,7 +436,7 @@ function buildDeviceIndex(devices: CentralDevice[]): Map<string, { latitude: num
   const index = new Map<string, { latitude: number; longitude: number; timestamp: string }>();
 
   for (const device of devices) {
-    const deviceId = typeof device.device_id === 'string' ? device.device_id : null;
+    const deviceId = normalizeDeviceId(device.device_id);
     const fallbackCoords = deviceId ? DEVICE_COORDINATE_FALLBACKS[deviceId] : undefined;
     const latitude = toCoordinate(device.latitude) ?? fallbackCoords?.latitude ?? null;
     const longitude = toCoordinate(device.longitude) ?? fallbackCoords?.longitude ?? null;
@@ -260,7 +459,7 @@ function normalizeApiReadings(
   const out: ApiReading[] = [];
 
   for (const reading of readings) {
-    const sensorId = typeof reading.device_id === 'string' ? reading.device_id : null;
+    const sensorId = normalizeDeviceId(reading.device_id);
     if (!sensorId) continue;
 
     const coords = devicesById.get(sensorId);
@@ -360,7 +559,7 @@ function normalizeIncomingPayload(rawPayload: Record<string, unknown>): SensorRe
   const normalizedReadings = normalizeReadingFields(rawReadings);
 
   return {
-    device_id: String(rawPayload.device_id ?? rawPayload.deviceId ?? ''),
+    device_id: normalizeDeviceId(rawPayload.device_id ?? rawPayload.deviceId) ?? '',
     site: typeof rawPayload.site === 'string' ? rawPayload.site : undefined,
     timestamp:
       typeof rawPayload.timestamp === 'string' && rawPayload.timestamp.trim() !== ''
@@ -413,6 +612,12 @@ export async function GET(request: NextRequest) {
 
     const latest = searchParams.get('latest');
     const deviceId = searchParams.get('device_id');
+    const publicOnly = searchParams.get('public') === '1' || searchParams.get('public') === 'true';
+    const includeOffline = searchParams.get('include_offline') === '1' || searchParams.get('include_offline') === 'true';
+    const activeWindowParam = Number(searchParams.get('active_window_minutes'));
+    const activeWindowMinutes = Number.isFinite(activeWindowParam) && activeWindowParam > 0
+      ? Math.floor(activeWindowParam)
+      : DEFAULT_ACTIVE_SENSOR_WINDOW_MINUTES;
     const includeLatest = latest === null ? !deviceId : latest === '1' || latest === 'true';
 
     const readingsUrl = new URL(`${CENTRAL_DATA_BASE_URL}/data`);
@@ -432,9 +637,27 @@ export async function GET(request: NextRequest) {
       ]);
     } catch (error) {
       if (isCentralNetworkError(error)) {
-        console.warn('Central sensor server unreachable. Returning mock snapshot for local development.', error);
-        const mockPayload = buildMockSnapshot(deviceId);
-        return NextResponse.json(mockPayload);
+        console.warn('Central sensor server unreachable. Falling back to local database snapshot.', error);
+
+        try {
+          const dbReadings = await getFallbackDbReadings(Math.max(limit, 500), publicOnly);
+          const dbSnapshot = buildDbSnapshot(dbReadings, deviceId);
+          if (dbSnapshot.readings.length > 0) {
+            const payload = includeOffline
+              ? dbSnapshot
+              : filterSnapshotByFreshness(dbSnapshot, activeWindowMinutes);
+            return NextResponse.json(payload);
+          }
+        } catch (dbError) {
+          console.error('Database fallback for sensor snapshot failed:', dbError);
+        }
+
+        if (ENABLE_SENSOR_MOCK_FALLBACK) {
+          const mockPayload = buildMockSnapshot(deviceId);
+          return NextResponse.json(mockPayload);
+        }
+
+        return NextResponse.json({ devices: [], readings: [] });
       }
       throw error;
     }
@@ -445,8 +668,44 @@ export async function GET(request: NextRequest) {
     const devicesById = buildDeviceIndex(safeDevices);
     const readings = normalizeApiReadings(safeReadings, devicesById);
     const devices = normalizeApiDevices(devicesById);
+    const snapshot = { devices, readings };
 
-    return NextResponse.json({ devices, readings });
+    if (snapshot.readings.length === 0) {
+      try {
+        const dbReadings = await getFallbackDbReadings(Math.max(limit, 500), publicOnly);
+        const dbSnapshot = buildDbSnapshot(dbReadings, deviceId);
+        if (dbSnapshot.readings.length > 0) {
+          const payload = includeOffline
+            ? dbSnapshot
+            : filterSnapshotByFreshness(dbSnapshot, activeWindowMinutes);
+          return NextResponse.json(payload);
+        }
+      } catch (dbError) {
+        console.error('Database fallback after empty central snapshot failed:', dbError);
+      }
+    }
+
+    if (!includeOffline) {
+      const filteredCentralSnapshot = filterSnapshotByFreshness(snapshot, activeWindowMinutes);
+      if (filteredCentralSnapshot.readings.length > 0) {
+        return NextResponse.json(filteredCentralSnapshot);
+      }
+
+      try {
+        const dbReadings = await getFallbackDbReadings(Math.max(limit, 500), publicOnly);
+        const dbSnapshot = buildDbSnapshot(dbReadings, deviceId);
+        const filteredDbSnapshot = filterSnapshotByFreshness(dbSnapshot, activeWindowMinutes);
+        if (filteredDbSnapshot.readings.length > 0) {
+          return NextResponse.json(filteredDbSnapshot);
+        }
+      } catch (dbError) {
+        console.error('Database fallback after stale central snapshot failed:', dbError);
+      }
+
+      return NextResponse.json(filteredCentralSnapshot);
+    }
+
+    return NextResponse.json(snapshot);
   } catch (error) {
     console.error('Error fetching device snapshots:', error);
     return NextResponse.json(

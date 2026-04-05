@@ -300,28 +300,31 @@ function getAqiStyle(value: number) {
   return AQI_BREAKPOINTS.find((b) => safeValue <= b.limit) ?? AQI_BREAKPOINTS[AQI_BREAKPOINTS.length - 1];
 }
 
-function createNumericIcon(value: number, color: string) {
+function createNumericIcon(value: number, color: string, size = 40) {
+  const ring = Math.max(2, Math.round(size * 0.075));
+  const fontSize = Math.max(12, Math.round(size * 0.325));
+  const iconAnchor = Math.round(size / 2);
   return L.divIcon({
     className: "aqi-number-icon",
     html: `
       <div style="
-        width: 40px;
-        height: 40px;
+        width: ${size}px;
+        height: ${size}px;
         border-radius: 9999px;
         background: ${color};
-        border: 3px solid rgba(15, 23, 42, 0.9);
+        border: ${ring}px solid rgba(15, 23, 42, 0.9);
         color: #ffffff;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 13px;
+        font-size: ${fontSize}px;
         font-weight: 700;
         line-height: 1;
       ">${Math.round(value)}</div>
     `,
-    iconSize: [40, 40],
-    iconAnchor: [20, 20],
-    popupAnchor: [0, -20],
+    iconSize: [size, size],
+    iconAnchor: [iconAnchor, iconAnchor],
+    popupAnchor: [0, -iconAnchor],
   });
 }
 
@@ -744,6 +747,25 @@ export function AirQualityMap({
     };
   }, [useUserLocation, userLocation, points, text]);
 
+  const nearestPointKey = useMemo(() => {
+    if (!useUserLocation || !userLocation || points.length === 0) return null;
+
+    let bestKey: string | null = null;
+    let bestDist = Number.POSITIVE_INFINITY;
+
+    for (const point of points) {
+      const dLat = point.coords[0] - userLocation[0];
+      const dLng = point.coords[1] - userLocation[1];
+      const dist = dLat * dLat + dLng * dLng;
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestKey = point.key;
+      }
+    }
+
+    return bestKey;
+  }, [points, useUserLocation, userLocation]);
+
   const statusValueText = !useUserLocation
     ? text.enableLocation
     : isLocating
@@ -923,11 +945,12 @@ export function AirQualityMap({
 
             {points.map((point) => {
               const aqi = getAqiStyle(point.avgValue);
+              const markerSize = point.key === nearestPointKey ? 64 : 40;
               return (
                 <Marker
                   key={point.key}
                   position={point.coords}
-                  icon={createNumericIcon(point.avgValue, aqi.color)}
+                  icon={createNumericIcon(point.avgValue, aqi.color, markerSize)}
                   eventHandlers={{
                     click: () => {
                       if (!deviceDetailsEnabled) {
@@ -939,7 +962,7 @@ export function AirQualityMap({
                           const histories = await Promise.all(
                             point.sensorIds.map(async (sensorId) => {
                               const response = await fetch(
-                                `/api/v1/sensor-data?device_id=${encodeURIComponent(sensorId)}&limit=50`,
+                                `/api/v1/sensor-data?device_id=${encodeURIComponent(sensorId)}&limit=50&include_offline=true`,
                                 {
                                   method: 'GET',
                                   cache: 'no-store',

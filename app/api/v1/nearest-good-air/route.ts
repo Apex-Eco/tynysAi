@@ -3,6 +3,9 @@ import { getSession } from '@/lib/auth';
 import { getUserByEmail } from '@/lib/data-access';
 import type { GoodAirOption, NearestGoodAirResponse, RouteAqiBand } from '@/types/route';
 import { isValidAlmatyCoordinate, parseCoordinatePair } from '@/lib/geo';
+import { db } from '@/lib/db';
+import { sensorReadings, sensors } from '@/lib/db/schema';
+import { desc, eq } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +21,7 @@ type DeviceObservation = {
 
 const CENTRAL_DATA_BASE_URL = (process.env.CENTRAL_DATA_BASE_URL ?? 'http://data-tynys-aqserver-1:8082').replace(/\/$/, '');
 const BEST_AVAILABLE_AIR_NOTE = 'Best available air nearby';
+const LOCAL_NEAREST_WINDOW_MINUTES = Number(process.env.LOCAL_NEAREST_WINDOW_MINUTES ?? '180');
 const NETWORK_ERROR_CODES = new Set(['EAI_AGAIN', 'ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EHOSTUNREACH']);
 const LOCAL_MOCK_DEVICES = [
   { id: 'dev-bus-01', latitude: 43.2383, longitude: 76.8897, site: 'Almaty Center Bus Hub', pm25: 10.8, aqi: 46 },
@@ -175,10 +179,10 @@ function parseObservation(item: unknown, index: number): DeviceObservation | nul
     ?? (typeof raw.id === 'string' && raw.id.trim() !== '' ? raw.id.trim() : null)
     ?? `reading-${index}-${latitude.toFixed(5)},${longitude.toFixed(5)}`;
 
-  const label =
+  const siteName =
     (typeof raw.site === 'string' && raw.site.trim() !== '' ? raw.site.trim() : null)
-    ?? (typeof raw.name === 'string' && raw.name.trim() !== '' ? raw.name.trim() : null)
-    ?? id;
+    ?? (typeof raw.name === 'string' && raw.name.trim() !== '' ? raw.name.trim() : null);
+  const label = siteName && siteName !== id ? `${id} · ${siteName}` : id;
 
   return {
     id,
@@ -214,6 +218,66 @@ async function loadObservationsFromCentral(): Promise<DeviceObservation[]> {
     }
     throw error;
   }
+}
+
+async function loadObservationsFromLocalDb(): Promise<DeviceObservation[]> {
+  const recentRows = await db
+    .select({
+      deviceId: sensors.deviceId,
+      latitude: sensors.latitude,
+      longitude: sensors.longitude,
+      timestamp: sensorReadings.timestamp,
+      pm25: sensorReadings.pm25,
+      pm10: sensorReadings.pm10,
+      pm1: sensorReadings.pm1,
+      co2: sensorReadings.co2,
+      value: sensorReadings.value,
+    })
+    .from(sensorReadings)
+    .leftJoin(sensors, eq(sensorReadings.sensorId, sensors.id))
+    .orderBy(desc(sensorReadings.timestamp))
+    .limit(2000);
+
+  const cutoffMs = Date.now() - Math.max(1, LOCAL_NEAREST_WINDOW_MINUTES) * 60 * 1000;
+  const dedupByDevice = new Map<string, DeviceObservation>();
+
+  for (const row of recentRows) {
+    const id = typeof row.deviceId === 'string' ? row.deviceId.trim() : '';
+    if (!id) continue;
+    if (dedupByDevice.has(id)) continue;
+
+    const latitude = typeof row.latitude === 'number' ? row.latitude : null;
+    const longitude = typeof row.longitude === 'number' ? row.longitude : null;
+    if (latitude === null || longitude === null || !isValidAlmatyCoordinate(latitude, longitude)) continue;
+
+    const tsMs = row.timestamp instanceof Date ? row.timestamp.getTime() : new Date(row.timestamp).getTime();
+    if (!Number.isFinite(tsMs) || tsMs < cutoffMs) continue;
+
+    const pm25 = typeof row.pm25 === 'number' ? row.pm25 : null;
+    const fallbackValue =
+      typeof row.value === 'number'
+        ? row.value
+        : typeof row.pm10 === 'number'
+          ? row.pm10
+          : typeof row.pm1 === 'number'
+            ? row.pm1
+            : typeof row.co2 === 'number'
+              ? row.co2
+              : 500;
+
+    const aqi = pm25 !== null ? estimateAqiFromPm25(pm25) : fallbackValue;
+
+    dedupByDevice.set(id, {
+      id,
+      label: id,
+      latitude,
+      longitude,
+      pm25,
+      aqi,
+    });
+  }
+
+  return Array.from(dedupByDevice.values());
 }
 
 function toRadians(value: number) {
@@ -278,14 +342,26 @@ function selectNearestOptions(
     return { options: [] };
   }
 
+  const takeTop = (items: Array<{ option: GoodAirOption }>) => items.slice(0, 3).map((item) => item.option);
+
   const primaryClean = allOptions.filter(({ option, pm25 }) => option.aqi < 50 || (pm25 !== null && pm25 < 12));
-  if (primaryClean.length > 0) {
-    return { options: primaryClean.slice(0, 3).map((item) => item.option) };
+  if (primaryClean.length >= 3) {
+    return { options: takeTop(primaryClean) };
   }
 
-  const relaxedClean = allOptions.filter(({ option }) => option.aqi < 100);
-  if (relaxedClean.length > 0) {
-    return { options: relaxedClean.slice(0, 3).map((item) => item.option) };
+  const selectedIds = new Set(primaryClean.map(({ option }) => option.id));
+  const relaxedClean = allOptions.filter(({ option }) => option.aqi < 100 && !selectedIds.has(option.id));
+  const preferredCombined = [...primaryClean, ...relaxedClean];
+
+  if (preferredCombined.length >= 3) {
+    return { options: takeTop(preferredCombined) };
+  }
+
+  const fallbackAdditional = allOptions.filter(({ option }) => !selectedIds.has(option.id));
+  const combinedWithFallback = [...primaryClean, ...fallbackAdditional];
+  if (combinedWithFallback.length > 0) {
+    const message = primaryClean.length === 0 ? BEST_AVAILABLE_AIR_NOTE : undefined;
+    return { options: takeTop(combinedWithFallback), message };
   }
 
   return { options: [allOptions[0].option], message: BEST_AVAILABLE_AIR_NOTE };
@@ -317,7 +393,10 @@ export async function GET(request: NextRequest) {
     }
 
     const source = { latitude, longitude };
-    const observations = await loadObservationsFromCentral();
+    let observations = await loadObservationsFromLocalDb();
+    if (observations.length === 0) {
+      observations = await loadObservationsFromCentral();
+    }
     let selected = selectNearestOptions(source, observations);
     if (selected.options.length === 0) {
       selected = selectNearestOptions(source, buildMockObservations());

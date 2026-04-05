@@ -373,7 +373,7 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
 
     const fetchLiveReadings = async () => {
       try {
-        const response = await fetch('/api/v1/sensor-data?public=1&latest=true&limit=100', {
+        const response = await fetch('/api/v1/sensor-data?latest=true&limit=100', {
           method: 'GET',
           cache: 'no-store',
         });
@@ -495,6 +495,22 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
     startDate,
     endDate,
   ]);
+
+  const liveSensorIds = useMemo(() => {
+    return new Set(liveReadings.map((reading) => reading.sensorId));
+  }, [liveReadings]);
+
+  const liveRouteOptions = useMemo(() => {
+    return routeOptions.filter((option) => liveSensorIds.has(option.id));
+  }, [routeOptions, liveSensorIds]);
+
+  useEffect(() => {
+    if (!activeRouteOptionId) return;
+    if (liveSensorIds.has(activeRouteOptionId)) return;
+
+    setActiveRouteOptionId(null);
+    setActiveRouteDestination(null);
+  }, [activeRouteOptionId, liveSensorIds]);
 
   const statValues: StatValues = useMemo(() => {
     const uniqueSensors = new Set(filteredReadings.map((r) => r.sensorId));
@@ -1045,7 +1061,7 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
   );
 
   const isBestAvailableOnly =
-    routeOptions.length === 1
+    liveRouteOptions.length === 1
     && (routeOptionsMessage?.trim().toLowerCase() ?? "") === "best available air nearby";
 
   const routeDialogBody = (
@@ -1054,7 +1070,7 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
         <p className="text-sm text-slate-300">{ui.routeLoading}</p>
       ) : null}
 
-      {!isRouteOptionsLoading && routeOptions.length === 0 && routeOptionsError ? (
+      {!isRouteOptionsLoading && liveRouteOptions.length === 0 && routeOptionsError ? (
         <div className="space-y-3">
           <p className="text-sm text-slate-300">{routeOptionsError}</p>
           <Button variant="outline" onClick={loadRouteOptions}>
@@ -1063,19 +1079,19 @@ export function DashboardClient({ readings, dict }: DashboardClientProps) {
         </div>
       ) : null}
 
-      {!isRouteOptionsLoading && routeOptions.length === 0 && !routeOptionsError ? (
+      {!isRouteOptionsLoading && liveRouteOptions.length === 0 && !routeOptionsError ? (
         <p className="text-sm text-slate-300">{ui.routeNoOptions}</p>
       ) : null}
 
-      {!isRouteOptionsLoading && routeOptions.length > 0 && isBestAvailableOnly && routeOptionsMessage ? (
+      {!isRouteOptionsLoading && liveRouteOptions.length > 0 && isBestAvailableOnly && routeOptionsMessage ? (
         <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
           {routeOptionsMessage}
         </div>
       ) : null}
 
-      {!isRouteOptionsLoading && routeOptions.length > 0 ? (
+      {!isRouteOptionsLoading && liveRouteOptions.length > 0 ? (
         <div className="max-h-[52dvh] space-y-2 overflow-y-auto pr-1">
-          {routeOptions.map((option) => {
+          {liveRouteOptions.map((option) => {
             const isActive = activeRouteOptionId === option.id;
             const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${option.latitude},${option.longitude}`;
             return (

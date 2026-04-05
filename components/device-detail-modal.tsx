@@ -123,6 +123,8 @@ function LatestReadingsTable({ details }: { details: DeviceDetails }) {
               <TableHead className="text-right uppercase tracking-[0.08em] text-slate-400">PM2.5</TableHead>
               <TableHead className="text-right uppercase tracking-[0.08em] text-slate-400">PM10</TableHead>
               <TableHead className="text-right uppercase tracking-[0.08em] text-slate-400">CO2</TableHead>
+              <TableHead className="text-right uppercase tracking-[0.08em] text-slate-400">Temp (°C)</TableHead>
+              <TableHead className="text-right uppercase tracking-[0.08em] text-slate-400">Humidity (%)</TableHead>
               <TableHead className="uppercase tracking-[0.08em] text-slate-400">Site/Device ID</TableHead>
             </TableRow>
           </TableHeader>
@@ -137,6 +139,8 @@ function LatestReadingsTable({ details }: { details: DeviceDetails }) {
                 <TableCell className="text-right font-mono text-xs text-zinc-100">{numberOrDash(resolveReadingMetric(reading, ["pm25", "pm2_5", "PM2.5", "PM25", "pm_2_5"]))}</TableCell>
                 <TableCell className="text-right font-mono text-xs text-zinc-100">{numberOrDash(resolveReadingMetric(reading, ["pm10", "pm_10", "PM10"]))}</TableCell>
                 <TableCell className="text-right font-mono text-xs text-zinc-100">{numberOrDash(resolveReadingMetric(reading, ["co2", "CO2", "co_2"]))}</TableCell>
+                <TableCell className="text-right font-mono text-xs text-zinc-100">{numberOrDash(resolveReadingMetric(reading, ["temperatureC", "temperature", "temp", "TEMP"]))}</TableCell>
+                <TableCell className="text-right font-mono text-xs text-zinc-100">{numberOrDash(resolveReadingMetric(reading, ["humidityPct", "humidity", "hum", "HUM"]))}</TableCell>
                 <TableCell className="text-xs font-medium text-zinc-100">{reading.sensorId}</TableCell>
               </TableRow>
             ))}
